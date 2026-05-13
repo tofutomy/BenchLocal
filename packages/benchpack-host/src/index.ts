@@ -1743,6 +1743,21 @@ function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown benchmark error.";
 }
 
+function isAuthProviderErrorMessage(message: string): boolean {
+  return /(^|\D)(401|403)(\D|$)|unauthori[sz]ed|forbidden|auth|api key|invalid[_ -]?key|permission denied/i.test(message);
+}
+
+function isRetryableProviderErrorMessage(message: string): boolean {
+  if (isAuthProviderErrorMessage(message)) {
+    return false;
+  }
+
+  return (
+    /fetch failed|network|econn|etimedout|timed out|timeout|socket|connection|upstream provider|provider.*unavailable/i.test(message) ||
+    /(^|\D)(408|409|425|429|5\d\d)(\D|$)/.test(message)
+  );
+}
+
 function formatRequestTimeoutMessage(timeoutSeconds: number): string {
   return `The model did not complete the answer within the configured request timeout (${timeoutSeconds} seconds).`;
 }
@@ -1786,12 +1801,32 @@ function compactGenerationRequest(input?: GenerationRequest): GenerationRequest 
   ) as GenerationRequest;
 }
 
+function getEnvRequestTimeoutOverride(): number | undefined {
+  const raw = process.env.BENCHLOCAL_REQUEST_TIMEOUT_SECONDS?.trim();
+
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function getDefaultGenerationRequest(): GenerationRequest {
+  const requestTimeoutSeconds = getEnvRequestTimeoutOverride();
+
+  return compactGenerationRequest({
+    ...DEFAULT_BENCHLOCAL_GENERATION,
+    request_timeout_seconds: requestTimeoutSeconds ?? DEFAULT_BENCHLOCAL_GENERATION.request_timeout_seconds
+  });
+}
+
 function resolveBenchPackGeneration(
   manifest: BenchPackManifest,
   overrides?: GenerationRequest
 ): GenerationRequest {
   return compactGenerationRequest({
-    ...DEFAULT_BENCHLOCAL_GENERATION,
+    ...getDefaultGenerationRequest(),
     ...(manifest.samplingDefaults ?? {}),
     ...(overrides ?? {})
   });
@@ -2935,13 +2970,16 @@ function buildScenarioExecutionFailureResult(
   generation?: GenerationRequest
 ): ScenarioResult {
   const message = toScenarioExecutionErrorMessage(error, generation, startedAt);
+  const retryableProviderError = isRetryableProviderErrorMessage(`${toErrorMessage(error)} ${message}`);
   const completedAt = Date.now();
 
-  return {
+  const failureResult: ScenarioResult = {
     scenarioId: scenario.id,
     status: "fail",
     score: 0,
-    summary: "BenchLocal could not complete this scenario run.",
+    summary: retryableProviderError
+      ? "Provider or network error interrupted this scenario run."
+      : "BenchLocal could not complete this scenario run.",
     note: message,
     rawLog: `error=${message}`,
     verifier: {
@@ -2955,15 +2993,52 @@ function buildScenarioExecutionFailureResult(
       durationMs: completedAt - startedAt
     }
   };
+
+  return {
+    ...failureResult,
+    errorType: retryableProviderError ? "provider_error" : "execution_error",
+    retryable: retryableProviderError
+  } as ScenarioResult;
+}
+
+function getScenarioResultProviderErrorText(result: ScenarioResult): string {
+  return [
+    result.summary,
+    result.note,
+    result.rawLog,
+    result.verifier?.summary,
+    result.verifier?.details ? JSON.stringify(result.verifier.details) : undefined
+  ].filter(Boolean).join("\n");
+}
+
+function classifyReturnedScenarioResult(result: ScenarioResult): ScenarioResult {
+  if (result.errorType || result.status !== "fail") {
+    return result;
+  }
+
+  const retryableProviderError = isRetryableProviderErrorMessage(getScenarioResultProviderErrorText(result));
+
+  if (!retryableProviderError) {
+    return result;
+  }
+
+  return {
+    ...result,
+    errorType: "provider_error",
+    retryable: true,
+    summary: result.summary || "Provider or network error interrupted this scenario run."
+  } as ScenarioResult;
 }
 
 function applyScenarioTimings(result: ScenarioResult, startedAt: number, completedAt: number): ScenarioResult {
+  const classifiedResult = classifyReturnedScenarioResult(result);
+
   return {
-    ...result,
+    ...classifiedResult,
     timings: {
-      startedAt: result.timings?.startedAt ?? new Date(startedAt).toISOString(),
-      completedAt: result.timings?.completedAt ?? new Date(completedAt).toISOString(),
-      durationMs: result.timings?.durationMs ?? completedAt - startedAt
+      startedAt: classifiedResult.timings?.startedAt ?? new Date(startedAt).toISOString(),
+      completedAt: classifiedResult.timings?.completedAt ?? new Date(completedAt).toISOString(),
+      durationMs: classifiedResult.timings?.durationMs ?? completedAt - startedAt
     }
   };
 }
