@@ -1742,6 +1742,27 @@ function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown benchmark error.";
 }
 
+function formatRequestTimeoutMessage(timeoutSeconds: number): string {
+  return `The model did not complete the answer within the configured request timeout (${timeoutSeconds} seconds).`;
+}
+
+function toScenarioExecutionErrorMessage(error: unknown, generation: GenerationRequest | undefined, startedAt: number): string {
+  const message = toErrorMessage(error);
+  const timeoutSeconds = generation?.request_timeout_seconds;
+
+  if (!timeoutSeconds || !Number.isFinite(timeoutSeconds)) {
+    return message;
+  }
+
+  const elapsedMs = Date.now() - startedAt;
+  const timeoutMs = timeoutSeconds * 1000;
+  const likelyTimeout =
+    isAbortError(error) ||
+    (/fetch failed/i.test(message) && elapsedMs >= Math.max(0, timeoutMs - 1000));
+
+  return likelyTimeout ? formatRequestTimeoutMessage(timeoutSeconds) : message;
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && /abort|cancel/i.test(error.name + " " + error.message);
 }
@@ -2909,9 +2930,10 @@ async function executeSerialTestCasesMode(
 function buildScenarioExecutionFailureResult(
   scenario: ScenarioMeta,
   error: unknown,
-  startedAt: number
+  startedAt: number,
+  generation?: GenerationRequest
 ): ScenarioResult {
-  const message = toErrorMessage(error);
+  const message = toScenarioExecutionErrorMessage(error, generation, startedAt);
   const completedAt = Date.now();
 
   return {
@@ -2955,7 +2977,7 @@ async function runScenarioSafely(
       throw error;
     }
 
-    return buildScenarioExecutionFailureResult(input.scenario, error, startedAt);
+    return buildScenarioExecutionFailureResult(input.scenario, error, startedAt, input.generation);
   }
 }
 
