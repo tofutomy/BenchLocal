@@ -9,6 +9,8 @@
 </p>
 
 <p align="center">
+  <a href="https://benchlocal.com">Website</a>
+  ·
   <a href="https://github.com/stevibe/BenchLocal/releases/latest">Download</a>
   ·
   <a href="./docs/assets/benchlocal-demo.mp4">Watch demo</a>
