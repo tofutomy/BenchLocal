@@ -1,0 +1,30 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BenchLocal logo">
+  <g filter="url(#benchlocal-logo-shadow)">
+    <rect x="92" y="92" width="840" height="840" rx="188" fill="black"/>
+  </g>
+  <path d="M457 277.085H347L402 182L457 277.085Z" fill="white"/>
+  <path d="M567 277.085H457L512 182L567 277.085Z" fill="white"/>
+  <path d="M677 277.085H567L622 182L677 277.085Z" fill="white"/>
+  <path d="M567 746.915L677 746.915L622 842L567 746.915Z" fill="white"/>
+  <path d="M457 746.915L567 746.915L512 842L457 746.915Z" fill="white"/>
+  <path d="M347 746.915L457 746.915L402 842L347 746.915Z" fill="white"/>
+  <path d="M277.085 567L277.085 677L182 622L277.085 567Z" fill="white"/>
+  <path d="M277.085 457L277.085 567L182 512L277.085 457Z" fill="white"/>
+  <path d="M277.085 347L277.085 457L182 402L277.085 347Z" fill="white"/>
+  <path d="M746.915 457L746.915 347L842 402L746.915 457Z" fill="white"/>
+  <path d="M746.915 567L746.915 457L842 512L746.915 567Z" fill="white"/>
+  <path d="M746.915 677L746.915 567L842 622L746.915 677Z" fill="white"/>
+  <defs>
+    <filter id="benchlocal-logo-shadow" x="-42" y="-38" width="1108" height="1108" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feMorphology radius="4" operator="dilate" in="SourceAlpha" result="effect1_dropShadow"/>
+      <feOffset dy="4"/>
+      <feGaussianBlur stdDeviation="65"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.258188 0 0 0 0 0.962909 0 0 0 0 1 0 0 0 0.25 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow" result="shape"/>
+    </filter>
+  </defs>
+</svg>

@@ -1,20 +1,39 @@
-![BenchLocal header](./header.png)
+<p align="center">
+  <img src="./docs/assets/benchlocal-logo.svg" alt="BenchLocal logo" width="104" />
+</p>
 
-# BenchLocal
+<h1 align="center">BenchLocal</h1>
 
-Practical benchmarks for LLMs. Run them, build them, share them.
+<p align="center">
+  Test LLMs on real tasks. Compare models side-by-side.
+</p>
 
-BenchLocal is a desktop app for running, comparing, and managing LLM Bench Packs.
+<p align="center">
+  <a href="https://github.com/stevibe/BenchLocal/releases/latest">Download</a>
+  ·
+  <a href="./docs/assets/benchlocal-demo.mp4">Watch demo</a>
+  ·
+  <a href="./BENCH_PACK_AUTHORING.md">Build a Bench Pack</a>
+</p>
+
+<p align="center">
+  <a href="./docs/assets/benchlocal-demo.mp4">
+    <img src="./screenshot.png" alt="BenchLocal desktop app preview" />
+  </a>
+</p>
+
+BenchLocal is a local-first desktop app for running, comparing, and managing installable LLM Bench Packs against local or remote models.
 
 Official Bench Packs today:
 
-- ToolCall-15
-- BugFind-15
-- DataExtract-15
-- InstructFollow-15
-- ReasonMath-15
-- StructOutput-15
-- HermesAgent-20
+- [ToolCall-15](https://github.com/stevibe/ToolCall-15)
+- [BugFind-15](https://github.com/stevibe/BugFind-15)
+- [DataExtract-15](https://github.com/stevibe/DataExtract-15)
+- [InstructFollow-15](https://github.com/stevibe/InstructFollow-15)
+- [ReasonMath-15](https://github.com/stevibe/ReasonMath-15)
+- [StructOutput-15](https://github.com/stevibe/StructOutput-15)
+- [CLI-40](https://github.com/stevibe/CLI-40)
+- [HermesAgent-20](https://github.com/stevibe/HermesAgent-20)
 
 BenchLocal owns the shared desktop runtime:
 
