@@ -9,6 +9,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { Agent, setGlobalDispatcher } from "undici";
 import type {
   BenchPackRegistry,
   BenchPackRegistryEntry,
@@ -50,6 +51,12 @@ const execFileAsync = promisify(execFile);
 let dockerExecutablePathPromise: Promise<string | null> | null = null;
 const verifierContainerLocks = new Map<string, Promise<void>>();
 const runSummaryLocks = new Map<string, Promise<void>>();
+
+// Bench Packs commonly use global fetch; Undici otherwise applies a hidden 300s cap.
+setGlobalDispatcher(new Agent({
+  bodyTimeout: 0,
+  headersTimeout: 0
+}));
 
 type DockerRuntimeAvailability = {
   state: "ready" | "not_installed" | "not_running";
@@ -1762,6 +1769,12 @@ function formatRequestTimeoutMessage(timeoutSeconds: number): string {
   return `The model did not complete the answer within the configured request timeout (${timeoutSeconds} seconds).`;
 }
 
+function createRequestTimeoutError(timeoutSeconds: number): Error {
+  const error = new Error(formatRequestTimeoutMessage(timeoutSeconds));
+  error.name = "TimeoutError";
+  return error;
+}
+
 function toScenarioExecutionErrorMessage(error: unknown, generation: GenerationRequest | undefined, startedAt: number): string {
   const message = toErrorMessage(error);
   const timeoutSeconds = generation?.request_timeout_seconds;
@@ -1789,6 +1802,16 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 
   throw createAbortError(signal);
+}
+
+function getRequestTimeoutSeconds(generation?: GenerationRequest): number | undefined {
+  const timeoutSeconds = generation?.request_timeout_seconds;
+
+  if (!timeoutSeconds || !Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+    return undefined;
+  }
+
+  return timeoutSeconds;
 }
 
 function compactGenerationRequest(input?: GenerationRequest): GenerationRequest {
@@ -3171,16 +3194,54 @@ async function runScenarioSafely(
   emit: (event: ProgressEvent) => Promise<void>
 ): Promise<ScenarioResult> {
   const startedAt = Date.now();
+  const timeoutSeconds = getRequestTimeoutSeconds(input.generation);
+  const timeoutMs = timeoutSeconds ? timeoutSeconds * 1000 : undefined;
+  const scenarioController = timeoutMs ? new AbortController() : undefined;
+  let timedOut = false;
+  let timeout: NodeJS.Timeout | undefined;
+
+  const abortScenarioFromParent = () => {
+    scenarioController?.abort(input.abortSignal?.reason ?? createAbortError(input.abortSignal));
+  };
+
+  if (scenarioController && input.abortSignal) {
+    if (input.abortSignal.aborted) {
+      abortScenarioFromParent();
+    } else {
+      input.abortSignal.addEventListener("abort", abortScenarioFromParent, { once: true });
+    }
+  }
 
   try {
-    const result = await prepared.runScenario(input, emit);
+    const runPromise = prepared.runScenario({
+      ...input,
+      abortSignal: scenarioController?.signal ?? input.abortSignal
+    }, emit);
+    const result = await (timeoutMs && timeoutSeconds
+      ? Promise.race([
+          runPromise,
+          new Promise<ScenarioResult>((_resolve, reject) => {
+            timeout = setTimeout(() => {
+              timedOut = true;
+              const error = createRequestTimeoutError(timeoutSeconds);
+              scenarioController?.abort(error);
+              reject(error);
+            }, timeoutMs);
+          })
+        ])
+      : runPromise);
     return applyScenarioTimings(result, startedAt, Date.now());
   } catch (error) {
-    if (isAbortError(error) || input.abortSignal?.aborted) {
+    if (!timedOut && (isAbortError(error) || input.abortSignal?.aborted)) {
       throw error;
     }
 
     return buildScenarioExecutionFailureResult(input.scenario, error, startedAt, input.generation);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    input.abortSignal?.removeEventListener("abort", abortScenarioFromParent);
   }
 }
 

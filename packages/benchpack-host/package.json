@@ -12,7 +12,8 @@
     }
   },
   "dependencies": {
-    "@benchlocal/core": "*"
+    "@benchlocal/core": "*",
+    "undici": "^6.25.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
