@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import benchlocalIcon from "../../../assets/benchlocal-icon.png";
 import {
   ArrowRight,
@@ -135,6 +135,15 @@ function formatDurationMs(durationMs?: number): string | null {
 }
 
 type SettingsTab = "providers" | "models" | "benchPacks" | "verification" | "agent" | "advanced";
+
+type ToastTone = "success" | "danger" | "neutral" | "warning";
+
+type ToastMessage = {
+  id: string;
+  tone: ToastTone;
+  message: string;
+  dedupeKey: string;
+};
 
 type LoadState = {
   path: string;
@@ -1463,11 +1472,16 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [appNotice, setAppNotice] = useState<string | null>(null);
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
+  const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
   const [benchPackMutations, setBenchPackMutations] = useState<Record<string, BenchPackMutationState>>({});
   const themeMenuRef = useRef<HTMLDivElement | null>(null);
   const settingsOpenRef = useRef(false);
   const workspaceStateRef = useRef<BenchLocalWorkspaceState | null>(null);
   const benchPackInspectionsRef = useRef<BenchPackInspection[]>([]);
+  const toastIdRef = useRef(0);
+  const toastTimersRef = useRef(new Map<string, number>());
+  const activeToastKeysRef = useRef(new Set<string>());
+  const toastKeysByIdRef = useRef(new Map<string, string>());
 
   const providerIds = useMemo(() => Object.keys(draft?.providers ?? {}), [draft]);
   const themeOptions = useMemo(() => ["system", ...availableThemes.map((theme) => theme.id)], [availableThemes]);
@@ -1550,6 +1564,48 @@ export function App() {
 
   const hasUnsavedChanges =
     loadState && draft ? JSON.stringify(loadState.config) !== JSON.stringify(draft) : false;
+
+  const dismissToast = useCallback((id: string) => {
+    const timer = toastTimersRef.current.get(id);
+    const dedupeKey = toastKeysByIdRef.current.get(id);
+
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
+
+    if (dedupeKey) {
+      activeToastKeysRef.current.delete(dedupeKey);
+      toastKeysByIdRef.current.delete(id);
+    }
+
+    setToastMessages((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
+  const pushToast = useCallback((message: string, tone: ToastTone = "success") => {
+    const normalizedMessage = message.trim();
+
+    if (!normalizedMessage) {
+      return;
+    }
+
+    const dedupeKey = `${tone}:${normalizedMessage}`;
+
+    if (activeToastKeysRef.current.has(dedupeKey)) {
+      return;
+    }
+
+    const id = `toast-${Date.now()}-${toastIdRef.current}`;
+    toastIdRef.current += 1;
+    activeToastKeysRef.current.add(dedupeKey);
+    toastKeysByIdRef.current.set(id, dedupeKey);
+    setToastMessages((current) => [...current, { id, tone, message: normalizedMessage, dedupeKey }]);
+
+    const timeoutMs = tone === "danger" ? 8000 : 4500;
+    const timer = window.setTimeout(() => dismissToast(id), timeoutMs);
+    toastTimersRef.current.set(id, timer);
+  }, [dismissToast]);
+
   const effectiveThemeId = useMemo(() => {
     const requested = draft?.ui.theme ?? "system";
 
@@ -1816,6 +1872,54 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of toastTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+
+      toastTimersRef.current.clear();
+      activeToastKeysRef.current.clear();
+      toastKeysByIdRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!appNotice) {
+      return;
+    }
+
+    pushToast(appNotice, "success");
+    setAppNotice(null);
+  }, [appNotice, pushToast]);
+
+  useEffect(() => {
+    if (!settingsNotice) {
+      return;
+    }
+
+    pushToast(settingsNotice, "success");
+    setSettingsNotice(null);
+  }, [settingsNotice, pushToast]);
+
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+
+    pushToast(error, "danger");
+    setError(null);
+  }, [error, pushToast]);
+
+  useEffect(() => {
+    if (!showDownloadedUpdateBanner || !downloadedUpdateVersion) {
+      return;
+    }
+
+    pushToast(describeAppUpdateState(appUpdateState), "success");
+    setDismissedDownloadedUpdateVersion(downloadedUpdateVersion);
+  }, [appUpdateState, downloadedUpdateVersion, pushToast, showDownloadedUpdateBanner]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2808,16 +2912,14 @@ export function App() {
         nextTab.updatedAt = new Date().toISOString();
         return current;
       });
-      if (result.cancelled) {
-        setAppNotice(`Stopped ${result.benchPackName}.`);
-      } else if (!isRunSummaryComplete(result)) {
+      if (!result.cancelled && !isRunSummaryComplete(result)) {
         const completedCells = countStoredRunResults(result);
         setAppNotice(
           completedCells > 0
             ? `Ran available models for ${result.benchPackName}. Resume after starting the remaining model servers.`
             : `No selected models are online for ${result.benchPackName}. Start a model server, then resume this test.`
         );
-      } else {
+      } else if (!result.cancelled) {
         setAppNotice(`Completed ${result.benchPackName} across ${result.scenarioCount} scenarios and ${result.modelCount} model${result.modelCount === 1 ? "" : "s"}.`);
       }
       await loadBenchPackInspections();
@@ -2990,9 +3092,7 @@ export function App() {
         nextTab.updatedAt = new Date().toISOString();
         return current;
       });
-      if (result.cancelled) {
-        setAppNotice(`Stopped ${result.benchPackName}.`);
-      } else {
+      if (!result.cancelled) {
         setAppNotice(
           isRunSummaryComplete(result)
             ? `Completed ${result.benchPackName} across ${result.scenarioCount} scenarios and ${result.modelCount} model${result.modelCount === 1 ? "" : "s"}.`
@@ -3227,10 +3327,7 @@ export function App() {
         return;
       }
 
-      const benchPackName = activeRun?.benchPackId
-        ? createTabTitle(activeRun.benchPackId, benchPackInspections)
-        : "Bench Pack run";
-      setAppNotice(`Stopped ${benchPackName}.`);
+      // The host emits the final cancellation event; use that as the single stop notification.
     } catch (stopError) {
       setStoppingRuns((current) => {
         const next = { ...current };
@@ -4567,8 +4664,6 @@ export function App() {
             <SettingsScene
               settingsTab={settingsTab}
               setSettingsTab={setSettingsTab}
-              settingsNotice={settingsNotice}
-              error={error}
               draft={draft}
               loadState={loadState}
               hasUnsavedChanges={hasUnsavedChanges}
@@ -4584,8 +4679,6 @@ export function App() {
                 setSettingsNotice(null);
                 setSettingsOpen(false);
               }}
-              onDismissNotice={() => setSettingsNotice(null)}
-              onDismissError={() => setError(null)}
               onSaveAdvanced={() => void save()}
               onResetAdvanced={reset}
               onCreateProvider={() => setProviderModal({ mode: "create", form: createEmptyProvider() })}
@@ -4789,39 +4882,6 @@ export function App() {
 	            </aside>
 
 	            <section className="desktop-main">
-	              {appNotice ? (
-                  <Banner tone="success">
-                    <div className="banner-row">
-                      <span>{appNotice}</span>
-                      <button
-                        type="button"
-                        className="banner-dismiss"
-                        onClick={() => setAppNotice(null)}
-                        aria-label="Dismiss notice"
-                        title="Dismiss"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  </Banner>
-                ) : null}
-                {showDownloadedUpdateBanner ? (
-                  <Banner tone="success">
-                    <div className="banner-row">
-                      <span>{describeAppUpdateState(appUpdateState)}</span>
-                      <button
-                        type="button"
-                        className="banner-dismiss"
-                        onClick={() => setDismissedDownloadedUpdateVersion(downloadedUpdateVersion)}
-                        aria-label="Dismiss update notice"
-                        title="Dismiss"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  </Banner>
-                ) : null}
-	              {error ? <Banner tone="danger">{error}</Banner> : null}
 	              {isBusy && !draft ? <Banner tone="neutral">Loading BenchLocal config...</Banner> : null}
 
 	              <div className="workspace-scroll">
@@ -5287,6 +5347,8 @@ export function App() {
         </section>
 
       </main>
+
+      <ToastViewport messages={toastMessages} onDismiss={dismissToast} />
 
       {providerModal ? (
         <Modal
@@ -7517,8 +7579,6 @@ function DetachedLogsWindow() {
 function SettingsScene({
   settingsTab,
   setSettingsTab,
-  settingsNotice,
-  error,
   draft,
   loadState,
   hasUnsavedChanges,
@@ -7531,8 +7591,6 @@ function SettingsScene({
   verifierStatuses,
   agentAccessState,
   onBack,
-  onDismissNotice,
-  onDismissError,
   onSaveAdvanced,
   onResetAdvanced,
   onCreateProvider,
@@ -7556,8 +7614,6 @@ function SettingsScene({
 }: {
   settingsTab: SettingsTab;
   setSettingsTab: (tab: SettingsTab) => void;
-  settingsNotice: string | null;
-  error: string | null;
   draft: BenchLocalConfig;
   loadState: LoadState | null;
   hasUnsavedChanges: boolean;
@@ -7570,8 +7626,6 @@ function SettingsScene({
   verifierStatuses: Record<string, BenchPackVerifierStatus>;
   agentAccessState: BenchLocalAgentAccessState | null;
   onBack: () => void;
-  onDismissNotice: () => void;
-  onDismissError: () => void;
   onSaveAdvanced: () => void;
   onResetAdvanced: () => void;
   onCreateProvider: () => void;
@@ -7626,38 +7680,6 @@ function SettingsScene({
       </aside>
 
       <div className="settings-scene-content">
-        {settingsNotice ? (
-          <Banner tone="success">
-            <div className="banner-row">
-              <span>{settingsNotice}</span>
-              <button
-                type="button"
-                className="banner-dismiss"
-                onClick={onDismissNotice}
-                aria-label="Dismiss notice"
-                title="Dismiss"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </Banner>
-        ) : null}
-        {error ? (
-          <Banner tone="danger">
-            <div className="banner-row">
-              <span>{error}</span>
-              <button
-                type="button"
-                className="banner-dismiss"
-                onClick={onDismissError}
-                aria-label="Dismiss error"
-                title="Dismiss"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </Banner>
-        ) : null}
         <div className="settings-body settings-body-scene">
             {settingsTab === "providers" ? (
               <ProvidersView
@@ -8894,7 +8916,41 @@ function VerifierPreparationModal({
   );
 }
 
-function Banner({ tone, children }: { tone: "success" | "danger" | "neutral" | "warning"; children: ReactNode }) {
+function ToastViewport({
+  messages,
+  onDismiss
+}: {
+  messages: ToastMessage[];
+  onDismiss: (id: string) => void;
+}) {
+  if (messages.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="toast-viewport" aria-live="polite" aria-atomic="false">
+      {messages.map((toast) => (
+        <div key={toast.id} className={`toast toast-${toast.tone}`} role={toast.tone === "danger" ? "alert" : "status"}>
+          <span className="toast-icon" aria-hidden="true">
+            {toast.tone === "danger" || toast.tone === "warning" ? <CircleAlert size={15} /> : <Check size={15} />}
+          </span>
+          <span className="toast-message">{toast.message}</span>
+          <button
+            type="button"
+            className="toast-dismiss"
+            onClick={() => onDismiss(toast.id)}
+            aria-label="Dismiss notification"
+            title="Dismiss"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Banner({ tone, children }: { tone: ToastTone; children: ReactNode }) {
   const toneClass =
     tone === "success"
       ? "banner-success"
