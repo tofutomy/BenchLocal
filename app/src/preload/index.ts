@@ -17,6 +17,11 @@ const MODELS_AVAILABILITY_CHANNEL = "benchlocal:models:availability";
 const WORKSPACES_UPDATED_CHANNEL = "benchlocal:workspaces:updated";
 const BENCH_PACK_RUN_EVENT_CHANNEL = "benchlocal:benchpacks:run-event";
 const BENCH_PACK_MUTATION_PROGRESS_CHANNEL = "benchlocal:benchpacks:mutation-progress";
+const WEB_PACK_CHAT_CHANNEL = "benchlocal:webpacks:chat";
+const WEB_PACK_STREAM_CHAT_CHANNEL = "benchlocal:webpacks:stream-chat";
+const WEB_PACK_STREAM_EVENT_CHANNEL = "benchlocal:webpacks:stream-event";
+const WEB_PACK_HISTORY_SAVE_CHANNEL = "benchlocal:webpacks:history-save";
+const WEB_PACK_ARTIFACT_WRITE_CHANNEL = "benchlocal:webpacks:artifact-write";
 const VERIFIERS_PROGRESS_CHANNEL = "benchlocal:verifiers:progress";
 const DETACHED_LOGS_STATE_CHANNEL = "benchlocal:logs:state";
 const DETACHED_LOGS_CLOSED_CHANNEL = "benchlocal:logs:closed";
@@ -145,6 +150,22 @@ const api: BenchLocalDesktopApi = {
       ipcRenderer.on(BENCH_PACK_RUN_EVENT_CHANNEL, wrapped);
       return () => ipcRenderer.removeListener(BENCH_PACK_RUN_EVENT_CHANNEL, wrapped);
     }
+  },
+  webPacks: {
+    chat: (input) => ipcRenderer.invoke(WEB_PACK_CHAT_CHANNEL, input),
+    streamChat: (input, listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]) => {
+        if (payload.streamId === input.streamId) {
+          listener(payload);
+        }
+      };
+
+      ipcRenderer.on(WEB_PACK_STREAM_EVENT_CHANNEL, wrapped);
+      ipcRenderer.send(WEB_PACK_STREAM_CHAT_CHANNEL, input);
+      return () => ipcRenderer.removeListener(WEB_PACK_STREAM_EVENT_CHANNEL, wrapped);
+    },
+    saveHistory: (input) => ipcRenderer.invoke(WEB_PACK_HISTORY_SAVE_CHANNEL, input),
+    writeArtifact: (input) => ipcRenderer.invoke(WEB_PACK_ARTIFACT_WRITE_CHANNEL, input)
   },
   verifiers: {
     list: () => ipcRenderer.invoke("benchlocal:verifiers:list"),

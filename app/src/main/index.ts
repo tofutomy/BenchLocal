@@ -279,8 +279,8 @@ async function createMainWindow(): Promise<void> {
     }
   });
 
-  window.webContents.on("console-message", (_event, level, message) => {
-    console.log(`[renderer:${level}] ${message}`);
+  window.webContents.on("console-message", (details) => {
+    console.log(`[renderer:${details.level}] ${details.message}`);
   });
 
   window.once("ready-to-show", () => {

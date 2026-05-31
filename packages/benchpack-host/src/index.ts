@@ -32,7 +32,9 @@ import type {
   SecretResolution,
   VerifierEndpoint,
   VerifierMode,
-  VerifierSpec
+  VerifierSpec,
+  WebBenchPackBridgePermission,
+  WebBenchPackManifestConfig
 } from "@benchlocal/core";
 import {
   expandHomePath,
@@ -343,7 +345,12 @@ function isBenchPackRegistryEntry(value: unknown): value is BenchPackRegistryEnt
     typeof source === "object" &&
     source !== null &&
     ((source.type === "github" && typeof source.repo === "string" && typeof source.tag === "string") ||
-      (source.type === "archive" && typeof source.url === "string"))
+      (source.type === "archive" && typeof source.url === "string") ||
+      (source.type === "web" &&
+        typeof source.entry === "string" &&
+        (source.manifest === undefined || typeof source.manifest === "string") &&
+        (source.integrity === undefined || typeof source.integrity === "string") &&
+        (source.buildId === undefined || typeof source.buildId === "string")))
   );
 }
 
@@ -962,19 +969,83 @@ async function resolveConfiguredBenchPackRoot(config: BenchLocalConfig, benchPac
   return undefined;
 }
 
-function isBenchPackManifest(value: unknown): value is BenchPackManifest {
+function getBenchPackManifestType(manifest: BenchPackManifest): "table" | "web" {
+  return manifest.type ?? "table";
+}
+
+function isHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedWebPackUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+
+    if (url.protocol === "https:") {
+      return true;
+    }
+
+    return (
+      url.protocol === "http:" &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isWebBenchPackBridgePermission(value: unknown): value is WebBenchPackBridgePermission {
+  return (
+    value === "models:list" ||
+    value === "models:read" ||
+    value === "inference:chat" ||
+    value === "inference:stream" ||
+    value === "runs:write" ||
+    value === "history:read" ||
+    value === "history:write" ||
+    value === "artifacts:write"
+  );
+}
+
+function isWebBenchPackManifestConfig(value: unknown): value is WebBenchPackManifestConfig {
   if (typeof value !== "object" || value === null) {
     return false;
   }
 
   const candidate = value as Record<string, unknown>;
   return (
+    candidate.bridgeVersion === 1 &&
+    Array.isArray(candidate.allowedOrigins) &&
+    candidate.allowedOrigins.every((origin) => typeof origin === "string" && isAllowedWebPackUrl(origin)) &&
+    Array.isArray(candidate.permissions) &&
+    candidate.permissions.every(isWebBenchPackBridgePermission) &&
+    (candidate.historyPlayback === undefined || typeof candidate.historyPlayback === "boolean") &&
+    (candidate.buildId === undefined || typeof candidate.buildId === "string") &&
+    (candidate.manifestHash === undefined || typeof candidate.manifestHash === "string")
+  );
+}
+
+function isBenchPackManifest(value: unknown): value is BenchPackManifest {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const manifestType = candidate.type ?? "table";
+  return (
     candidate.schemaVersion === 1 &&
     candidate.protocolVersion === 1 &&
+    (manifestType === "table" || manifestType === "web") &&
     typeof candidate.id === "string" &&
     typeof candidate.name === "string" &&
     typeof candidate.version === "string" &&
     typeof candidate.entry === "string" &&
+    (manifestType !== "web" || (isAllowedWebPackUrl(candidate.entry) && isWebBenchPackManifestConfig(candidate.web))) &&
     (candidate.requirements === undefined || isBenchPackCompatibilityRequirements(candidate.requirements)) &&
     typeof candidate.capabilities === "object" &&
     candidate.capabilities !== null &&
@@ -1080,6 +1151,18 @@ async function inspectBenchPack(
       status: "incompatible" as BenchPackInspection["status"],
       manifest,
       error: compatibilityError
+    };
+  }
+
+  if (getBenchPackManifestType(manifest) === "web") {
+    return {
+      id: benchPackId,
+      source: benchPackConfig.source,
+      rootDir,
+      status: "ready",
+      manifest,
+      scenarioCount: 0,
+      scenarios: []
     };
   }
 
@@ -1364,16 +1447,226 @@ async function stageBenchPackArchiveInstall(
       throw new Error(compatibilityError);
     }
 
-    const entryPath = path.resolve(versionStageDir, manifest.entry);
+    if (getBenchPackManifestType(manifest) === "table") {
+      const entryPath = path.resolve(versionStageDir, manifest.entry);
 
-    if (!(await pathExists(entryPath))) {
-      throw new Error(`Bench Pack entry is missing: ${entryPath}`);
+      if (!(await pathExists(entryPath))) {
+        throw new Error(`Bench Pack entry is missing: ${entryPath}`);
+      }
     }
 
     return {
       stagingRoot,
       stagedDir: versionStageDir,
       manifest
+    };
+  } catch (error) {
+    await fs.rm(stagingRoot, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function getUrlOrigin(value: string): string {
+  return new URL(value).origin;
+}
+
+function createWebBenchPackManifestFromRegistryEntry(entry: BenchPackRegistryEntry): BenchPackManifest {
+  if (entry.source.type !== "web") {
+    throw new Error(`Bench Pack "${entry.id}" does not declare a web source.`);
+  }
+
+  if (!isHttpsUrl(entry.source.entry)) {
+    throw new Error(`Web Bench Pack "${entry.id}" must use an https entry URL.`);
+  }
+
+  return {
+    schemaVersion: 1,
+    protocolVersion: 1,
+    type: "web",
+    id: entry.id,
+    name: entry.name,
+    author: entry.author,
+    version: entry.version,
+    description: entry.description,
+    entry: entry.source.entry,
+    web: {
+      bridgeVersion: 1,
+      allowedOrigins: [getUrlOrigin(entry.source.entry)],
+      permissions: [
+        "models:list",
+        "models:read",
+        "inference:chat",
+        "inference:stream",
+        "runs:write",
+        "history:read",
+        "history:write",
+        "artifacts:write"
+      ],
+      historyPlayback: true,
+      buildId: entry.source.buildId
+    },
+    capabilities: {
+      tools: entry.capabilities?.tools ?? true,
+      multiTurn: entry.capabilities?.multiTurn ?? true,
+      streamingProgress: true,
+      verification: entry.capabilities?.verification ?? false
+    }
+  };
+}
+
+async function fetchWebBenchPackManifest(entry: BenchPackRegistryEntry): Promise<BenchPackManifest> {
+  if (entry.source.type !== "web" || !entry.source.manifest) {
+    return createWebBenchPackManifestFromRegistryEntry(entry);
+  }
+
+  if (!isHttpsUrl(entry.source.manifest)) {
+    throw new Error(`Web Bench Pack "${entry.id}" must use an https manifest URL.`);
+  }
+
+  const response = await fetch(entry.source.manifest, {
+    method: "GET",
+    headers: {
+      accept: "application/json"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Web Bench Pack manifest (${response.status}).`);
+  }
+
+  const parsed = (await response.json()) as unknown;
+
+  if (!isBenchPackManifest(parsed)) {
+    throw new Error(`Web Bench Pack "${entry.id}" returned an invalid manifest.`);
+  }
+
+  if (getBenchPackManifestType(parsed) !== "web") {
+    throw new Error(`Web Bench Pack "${entry.id}" manifest must declare type "web".`);
+  }
+
+  if (parsed.id !== entry.id) {
+    throw new Error(`Web Bench Pack manifest id "${parsed.id}" does not match registry id "${entry.id}".`);
+  }
+
+  if (parsed.version !== entry.version) {
+    throw new Error(`Web Bench Pack manifest version "${parsed.version}" does not match registry version "${entry.version}".`);
+  }
+
+  return parsed;
+}
+
+async function stageWebBenchPackRegistryInstall(
+  entry: BenchPackRegistryEntry,
+  reporter: InstallProgressReporter | undefined,
+  action: BenchPackInstallAction,
+  runtime?: BenchLocalRuntimeCompatibility
+): Promise<{ stagingRoot: string; stagedDir: string; manifest: BenchPackManifest }> {
+  const stagingRoot = path.join(os.tmpdir(), `benchlocal-web-benchpack-${randomUUID().slice(0, 8)}`);
+  const versionKey = `${sanitizeBenchPackVersion(entry.version)}-${randomUUID().slice(0, 8)}`;
+  const versionStageDir = path.join(stagingRoot, versionKey);
+
+  await fs.mkdir(versionStageDir, { recursive: true });
+
+  try {
+    await reportInstallProgress(reporter, {
+      benchPackId: entry.id,
+      action,
+      phase: "downloading",
+      message: "Fetching Web Bench Pack manifest."
+    });
+    const manifest = await fetchWebBenchPackManifest(entry);
+    await reportInstallProgress(reporter, {
+      benchPackId: entry.id,
+      action,
+      phase: "validating",
+      message: "Validating Web Bench Pack manifest."
+    });
+    const compatibilityError = getBenchPackCompatibilityError(manifest, runtime);
+
+    if (compatibilityError) {
+      throw new Error(compatibilityError);
+    }
+
+    await fs.writeFile(path.join(versionStageDir, "benchlocal.pack.json"), JSON.stringify(manifest, null, 2), "utf8");
+
+    return {
+      stagingRoot,
+      stagedDir: versionStageDir,
+      manifest
+    };
+  } catch (error) {
+    await fs.rm(stagingRoot, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function isLikelyJsonUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.pathname.toLowerCase().endsWith(".json");
+  } catch {
+    return false;
+  }
+}
+
+async function stageWebBenchPackManifestUrlInstall(
+  manifestUrl: string,
+  reporter: InstallProgressReporter | undefined,
+  action: BenchPackInstallAction,
+  runtime?: BenchLocalRuntimeCompatibility
+): Promise<{ stagingRoot: string; stagedDir: string; manifest: BenchPackManifest } | null> {
+  if (!isAllowedWebPackUrl(manifestUrl) || !isLikelyJsonUrl(manifestUrl)) {
+    return null;
+  }
+
+  const stagingRoot = path.join(os.tmpdir(), `benchlocal-web-benchpack-${randomUUID().slice(0, 8)}`);
+
+  try {
+    await reportInstallProgress(reporter, {
+      benchPackId: "third-party",
+      action,
+      phase: "downloading",
+      message: "Fetching Web Bench Pack manifest."
+    });
+
+    const response = await fetch(manifestUrl, {
+      method: "GET",
+      headers: {
+        accept: "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Web Bench Pack manifest (${response.status}).`);
+    }
+
+    const parsed = (await response.json()) as unknown;
+
+    if (!isBenchPackManifest(parsed) || getBenchPackManifestType(parsed) !== "web") {
+      throw new Error("URL did not return a valid Web Bench Pack manifest.");
+    }
+
+    await reportInstallProgress(reporter, {
+      benchPackId: parsed.id,
+      action,
+      phase: "validating",
+      message: "Validating Web Bench Pack manifest."
+    });
+
+    const compatibilityError = getBenchPackCompatibilityError(parsed, runtime);
+
+    if (compatibilityError) {
+      throw new Error(compatibilityError);
+    }
+
+    const versionStageDir = path.join(stagingRoot, `${sanitizeBenchPackVersion(parsed.version)}-${randomUUID().slice(0, 8)}`);
+    await fs.mkdir(versionStageDir, { recursive: true });
+    await fs.writeFile(path.join(versionStageDir, "benchlocal.pack.json"), JSON.stringify(parsed, null, 2), "utf8");
+
+    return {
+      stagingRoot,
+      stagedDir: versionStageDir,
+      manifest: parsed
     };
   } catch (error) {
     await fs.rm(stagingRoot, { recursive: true, force: true });
@@ -1427,10 +1720,17 @@ export async function installBenchPackFromRegistry(
     throw new Error(`Bench Pack "${benchPackId}" was not found in the official registry.`);
   }
 
-  const archiveUrl =
-    entry.source.type === "github" ? getGitHubArchiveUrl(entry.source.repo, entry.source.tag) : entry.source.url;
   const baseDir = getBenchPackBaseDir(config, benchPackId);
-  const staged = await stageBenchPackArchiveInstall(entry.version, archiveUrl, reporter, "install", benchPackId, runtime);
+  const staged = entry.source.type === "web"
+    ? await stageWebBenchPackRegistryInstall(entry, reporter, "install", runtime)
+    : await stageBenchPackArchiveInstall(
+        entry.version,
+        entry.source.type === "github" ? getGitHubArchiveUrl(entry.source.repo, entry.source.tag) : entry.source.url,
+        reporter,
+        "install",
+        benchPackId,
+        runtime
+      );
   const rootDir = await commitStagedBenchPackInstall(config, benchPackId, entry.version, staged.stagedDir, staged.stagingRoot);
   const manifest = staged.manifest;
   await reportInstallProgress(reporter, {
@@ -1481,10 +1781,17 @@ export async function updateBenchPackFromRegistry(
     throw new Error(`Bench Pack "${benchPackId}" was not found in the official registry.`);
   }
 
-  const archiveUrl =
-    entry.source.type === "github" ? getGitHubArchiveUrl(entry.source.repo, entry.source.tag) : entry.source.url;
   const baseDir = getBenchPackBaseDir(config, benchPackId);
-  const staged = await stageBenchPackArchiveInstall(entry.version, archiveUrl, reporter, "update", benchPackId, runtime);
+  const staged = entry.source.type === "web"
+    ? await stageWebBenchPackRegistryInstall(entry, reporter, "update", runtime)
+    : await stageBenchPackArchiveInstall(
+        entry.version,
+        entry.source.type === "github" ? getGitHubArchiveUrl(entry.source.repo, entry.source.tag) : entry.source.url,
+        reporter,
+        "update",
+        benchPackId,
+        runtime
+      );
   await reportInstallProgress(reporter, {
     benchPackId,
     action: "update",
@@ -1545,7 +1852,9 @@ export async function installBenchPackFromUrl(
     message: "Resolving Bench Pack from URL."
   });
 
-  const staged = await stageBenchPackArchiveInstall("url", normalizedUrl, reporter, "install", "third-party", runtime);
+  const staged =
+    (await stageWebBenchPackManifestUrlInstall(normalizedUrl, reporter, "install", runtime)) ??
+    (await stageBenchPackArchiveInstall("url", normalizedUrl, reporter, "install", "third-party", runtime));
   const manifest = staged.manifest;
   const benchPackId = manifest.id;
   const rootDir = await commitStagedBenchPackInstall(config, benchPackId, manifest.version, staged.stagedDir, staged.stagingRoot);
@@ -1689,6 +1998,10 @@ async function loadConfiguredBenchPack(
 
   if (compatibilityError) {
     throw new Error(compatibilityError);
+  }
+
+  if (getBenchPackManifestType(manifest) === "web") {
+    throw new Error(`Web Bench Pack "${benchPackId}" must be opened in the interactive web surface.`);
   }
 
   const entryPath = path.resolve(rootDir, manifest.entry);
@@ -4332,6 +4645,11 @@ export async function runConfiguredBenchPack(
     await writeRunSummary(artifacts.summaryPath, {
       runId: artifacts.runId,
       runDir: artifacts.runDir,
+      packType: getBenchPackManifestType(manifest),
+      packVersion: manifest.version,
+      packEntry: manifest.entry,
+      packBuildId: manifest.web?.buildId,
+      packManifestHash: manifest.web?.manifestHash,
       benchPackId,
       benchPackName: manifest.name,
       executionMode,
@@ -4423,6 +4741,11 @@ export async function runConfiguredBenchPack(
       const summary: BenchPackRunSummary = {
         runId: artifacts.runId,
         runDir: artifacts.runDir,
+        packType: getBenchPackManifestType(manifest),
+        packVersion: manifest.version,
+        packEntry: manifest.entry,
+        packBuildId: manifest.web?.buildId,
+        packManifestHash: manifest.web?.manifestHash,
         benchPackId,
         benchPackName: manifest.name,
         executionMode,
@@ -4923,6 +5246,11 @@ export async function listRunHistoryForBenchPack(
         return {
           runId: summary.runId,
           runDir: summary.runDir,
+          packType: summary.packType,
+          packVersion: summary.packVersion,
+          packEntry: summary.packEntry,
+          packBuildId: summary.packBuildId,
+          packManifestHash: summary.packManifestHash,
           benchPackId: summary.benchPackId,
           benchPackName: summary.benchPackName,
           executionMode: summary.executionMode,

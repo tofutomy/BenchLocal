@@ -4,6 +4,34 @@ export type BenchPackId = string;
 export type ScenarioId = string;
 
 export type VerifierMode = "cloud" | "docker" | "custom_url";
+export type BenchPackManifestType = "table" | "web";
+export type WebBenchPackBridgePermission =
+  | "models:list"
+  | "models:read"
+  | "inference:chat"
+  | "inference:stream"
+  | "runs:write"
+  | "history:read"
+  | "history:write"
+  | "artifacts:write";
+
+export interface WebBenchPackDataPolicy {
+  mayUseRemoteServices?: boolean;
+  remoteOrigins?: string[];
+  sendsModelOutputs?: boolean;
+  sendsRunMetadata?: boolean;
+  description?: string;
+}
+
+export interface WebBenchPackManifestConfig {
+  bridgeVersion: 1;
+  allowedOrigins: string[];
+  permissions: WebBenchPackBridgePermission[];
+  historyPlayback?: boolean;
+  buildId?: string;
+  manifestHash?: string;
+  dataPolicy?: WebBenchPackDataPolicy;
+}
 
 export interface VerifierSpec {
   id: string;
@@ -40,12 +68,14 @@ export interface BenchPackCompatibilityRequirements {
 export interface BenchPackManifest {
   schemaVersion: 1;
   protocolVersion: 1;
+  type?: BenchPackManifestType;
   id: BenchPackId;
   name: string;
   author?: string;
   version: string;
   description?: string;
   entry: string;
+  web?: WebBenchPackManifestConfig;
   repository?: {
     type: "git";
     url: string;
@@ -81,6 +111,13 @@ export interface BenchPackRegistryEntry {
     | {
         type: "archive";
         url: string;
+      }
+    | {
+        type: "web";
+        entry: string;
+        manifest?: string;
+        integrity?: string;
+        buildId?: string;
       };
   homepage?: string;
   license?: string;
@@ -120,6 +157,11 @@ export interface BenchPackInspection {
 export interface BenchPackRunSummary {
   runId: string;
   runDir: string;
+  packType?: BenchPackManifestType;
+  packVersion?: string;
+  packEntry?: string;
+  packBuildId?: string;
+  packManifestHash?: string;
   benchPackId: string;
   benchPackName: string;
   executionMode?: BenchLocalExecutionMode;
@@ -133,11 +175,17 @@ export interface BenchPackRunSummary {
   events: ProgressEvent[];
   resultsByModel: Record<string, ScenarioResult[]>;
   scores: Record<string, BenchmarkScore>;
+  webHistory?: WebBenchPackHistoryPayload;
 }
 
 export interface BenchPackRunHistoryEntry {
   runId: string;
   runDir: string;
+  packType?: BenchPackManifestType;
+  packVersion?: string;
+  packEntry?: string;
+  packBuildId?: string;
+  packManifestHash?: string;
   benchPackId: string;
   benchPackName: string;
   executionMode?: BenchLocalExecutionMode;
@@ -148,6 +196,22 @@ export interface BenchPackRunHistoryEntry {
   scenarioCount: number;
   cancelled?: boolean;
   error?: string;
+}
+
+export type WebBenchPackRunStatus = "created" | "running" | "completed" | "cancelled" | "error";
+
+export interface WebBenchPackHistoryEvent {
+  type: string;
+  createdAt: string;
+  payload?: unknown;
+}
+
+export interface WebBenchPackHistoryPayload {
+  status?: WebBenchPackRunStatus;
+  score?: BenchmarkScore;
+  metadata?: Record<string, unknown>;
+  artifacts?: ArtifactRef[];
+  events?: WebBenchPackHistoryEvent[];
 }
 
 export interface ScenarioMeta {
@@ -270,9 +334,26 @@ export interface GenerationRequest {
   top_p?: number;
   top_k?: number;
   min_p?: number;
+  max_tokens?: number;
+  seed?: number;
+  stop?: string | string[];
   repetition_penalty?: number;
   presence_penalty?: number;
+  frequency_penalty?: number;
+  reasoning?: ReasoningRequest;
+  provider_options?: Record<string, unknown>;
+  extra_body?: Record<string, unknown>;
   request_timeout_seconds?: number;
+}
+
+export interface ReasoningRequest {
+  effort?: "minimal" | "low" | "medium" | "high";
+  budget_tokens?: number;
+  enabled?: boolean;
+  adaptive?: boolean;
+  exclude?: boolean;
+  summary?: "auto" | "concise" | "detailed";
+  provider?: Record<string, unknown>;
 }
 
 export const DEFAULT_BENCHLOCAL_REQUEST_TIMEOUT_SECONDS = 300;
@@ -302,6 +383,73 @@ export interface ToolResultRecord {
   name: string;
   result: unknown;
 }
+
+export type ChatMessageRole = "system" | "user" | "assistant" | "tool";
+
+export interface ChatMessage {
+  role: ChatMessageRole;
+  content?: string | unknown[] | null;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: ToolCallRecord[];
+}
+
+export interface BenchLocalChatRequest {
+  modelId: string;
+  messages: ChatMessage[];
+  generation?: GenerationRequest;
+  tools?: unknown[];
+  toolChoice?: unknown;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BenchLocalChatResponse {
+  id?: string;
+  modelId: string;
+  message?: ChatMessage;
+  content?: string;
+  finishReason?: string;
+  usage?: Record<string, unknown>;
+  raw?: unknown;
+}
+
+export type BenchLocalChatStreamEvent =
+  | {
+      type: "start";
+      id?: string;
+      modelId: string;
+    }
+  | {
+      type: "delta";
+      id?: string;
+      modelId: string;
+      content?: string;
+      raw?: unknown;
+    }
+  | {
+      type: "tool_call";
+      id?: string;
+      modelId: string;
+      toolCall: ToolCallRecord;
+      raw?: unknown;
+    }
+  | {
+      type: "done";
+      id?: string;
+      modelId: string;
+      message?: ChatMessage;
+      content?: string;
+      finishReason?: string;
+      usage?: Record<string, unknown>;
+      raw?: unknown;
+    }
+  | {
+      type: "error";
+      modelId: string;
+      message: string;
+      code?: string;
+      retryable?: boolean;
+    };
 
 export interface ModelOutput {
   finalAnswer?: string;
