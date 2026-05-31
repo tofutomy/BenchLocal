@@ -1,6 +1,6 @@
 {
   "name": "@benchlocal/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Core protocol, config, workspace, and theme types for BenchLocal and Bench Packs.",
   "author": "stevibe",
   "license": "MIT",
@@ -8,7 +8,9 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": {
@@ -19,7 +21,8 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/stevibe/BenchLocal.git"
+    "url": "git+https://github.com/stevibe/BenchLocal.git",
+    "directory": "packages/benchlocal-core"
   },
   "homepage": "https://github.com/stevibe/BenchLocal",
   "bugs": {

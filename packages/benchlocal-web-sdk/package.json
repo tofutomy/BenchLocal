@@ -1,9 +1,10 @@
 {
-  "name": "@benchlocal/sdk",
+  "name": "@benchlocal/web-sdk",
   "version": "0.3.0",
-  "description": "BenchLocal SDK for authoring Bench Packs on top of the BenchLocal runtime contract.",
+  "description": "Browser SDK for interactive BenchLocal Web Bench Packs.",
   "author": "stevibe",
   "license": "MIT",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -14,7 +15,6 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
       "import": "./dist/index.js"
     }
   },
@@ -22,7 +22,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/stevibe/BenchLocal.git",
-    "directory": "packages/benchlocal-sdk"
+    "directory": "packages/benchlocal-web-sdk"
   },
   "homepage": "https://github.com/stevibe/BenchLocal",
   "bugs": {
@@ -34,6 +34,7 @@
   "keywords": [
     "benchlocal",
     "benchpack",
+    "web",
     "llm",
     "benchmark",
     "sdk"
