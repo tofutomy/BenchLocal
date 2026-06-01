@@ -74,8 +74,25 @@ const WorkspaceTabSchema = z.object({
       top_p: z.number().optional(),
       top_k: z.number().optional(),
       min_p: z.number().optional(),
+      max_tokens: z.number().int().min(1).optional(),
+      seed: z.number().int().optional(),
+      stop: z.union([z.string(), z.array(z.string())]).optional(),
       repetition_penalty: z.number().optional(),
       presence_penalty: z.number().optional(),
+      frequency_penalty: z.number().optional(),
+      reasoning: z
+        .object({
+          effort: z.enum(["minimal", "low", "medium", "high"]).optional(),
+          budget_tokens: z.number().int().min(0).optional(),
+          enabled: z.boolean().optional(),
+          adaptive: z.boolean().optional(),
+          exclude: z.boolean().optional(),
+          summary: z.enum(["auto", "concise", "detailed"]).optional(),
+          provider: z.record(z.string(), z.unknown()).optional()
+        })
+        .optional(),
+      provider_options: z.record(z.string(), z.unknown()).optional(),
+      extra_body: z.record(z.string(), z.unknown()).optional(),
       request_timeout_seconds: z.number().int().min(1).optional()
     })
     .default({}),
@@ -206,7 +223,7 @@ function normalizeWorkspaceState(raw: unknown, defaultBenchPack = ""): BenchLoca
       ...tab,
       modelSelections: (tab.modelSelections ?? []).filter((selection) => Boolean(selection.modelId)),
       samplingOverrides: Object.fromEntries(
-        Object.entries(tab.samplingOverrides ?? {}).filter(([, value]) => value !== undefined && Number.isFinite(value))
+        Object.entries(tab.samplingOverrides ?? {}).filter(([, value]) => value !== undefined)
       ),
       loadedRunId: tab.loadedRunId ?? null,
       executionMode: tab.executionMode ?? "parallel_by_test_case",

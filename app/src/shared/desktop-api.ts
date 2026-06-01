@@ -1,5 +1,9 @@
 import type {
+  ArtifactRef,
   BenchPackRegistryEntry,
+  BenchLocalChatRequest,
+  BenchLocalChatResponse,
+  BenchLocalChatStreamEvent,
   BenchLocalAgentAccessState,
   BenchLocalAgentSafeConfig,
   BenchLocalConfig,
@@ -12,7 +16,8 @@ import type {
   BenchPackInspection,
   BenchPackRunHistoryEntry,
   BenchPackRunSummary,
-  VerifierEndpoint
+  VerifierEndpoint,
+  WebBenchPackHistoryPayload
 } from "@core";
 
 export type { BenchLocalAgentAccessState } from "@core";
@@ -171,6 +176,31 @@ export interface BenchLocalDesktopApi {
     clearHistory(input: { benchPackId: string }): Promise<{ removed: boolean }>;
     deleteHistory(input: { benchPackId: string; runIds: string[] }): Promise<{ removedRunIds: string[] }>;
     onRunEvent(listener: (payload: { tabId: string; benchPackId?: string; event: ProgressEvent }) => void): () => void;
+  };
+  webPacks: {
+    chat(input: BenchLocalChatRequest): Promise<BenchLocalChatResponse>;
+    streamChat(
+      input: { streamId: string; request: BenchLocalChatRequest },
+      listener: (payload: { streamId: string; event: BenchLocalChatStreamEvent; done?: boolean }) => void
+    ): () => void;
+    saveHistory(input: {
+      benchPackId: string;
+      runId?: string | null;
+      modelIds?: string[];
+      payload: WebBenchPackHistoryPayload;
+    }): Promise<BenchPackRunSummary>;
+    writeArtifact(input: {
+      benchPackId: string;
+      runId?: string | null;
+      modelIds?: string[];
+      artifact: {
+        kind: string;
+        label: string;
+        path?: string;
+        contentType?: string;
+        content: unknown;
+      };
+    }): Promise<{ summary: BenchPackRunSummary; artifact: ArtifactRef }>;
   };
   verifiers: {
     list(): Promise<BenchPackVerifierStatus[]>;

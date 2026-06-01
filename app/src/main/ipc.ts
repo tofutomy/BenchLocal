@@ -1,6 +1,16 @@
 import { promises as fs } from "node:fs";
 import { BrowserWindow, dialog, ipcMain } from "electron";
-import type { BenchLocalAgentEvent, BenchLocalConfig, BenchLocalProviderConfig, BenchLocalWorkspaceState, GenerationRequest, ProgressEvent } from "@core";
+import type {
+  BenchLocalAgentEvent,
+  BenchLocalChatRequest,
+  BenchLocalChatStreamEvent,
+  BenchLocalConfig,
+  BenchLocalProviderConfig,
+  BenchLocalWorkspaceState,
+  GenerationRequest,
+  ProgressEvent,
+  WebBenchPackHistoryPayload
+} from "@core";
 import type { DetachedLogsState } from "@/shared/desktop-api";
 import { closeDetachedLogsWindow, openDetachedLogsWindow, publishDetachedLogsState } from "./log-window";
 import { loadAppMetadata } from "./app-metadata";
@@ -44,6 +54,11 @@ const BENCH_PACK_HISTORY_LOAD_CHANNEL = "benchlocal:benchpacks:history-load";
 const BENCH_PACK_HISTORY_CLEAR_CHANNEL = "benchlocal:benchpacks:history-clear";
 const BENCH_PACK_HISTORY_DELETE_CHANNEL = "benchlocal:benchpacks:history-delete";
 const BENCH_PACK_RUN_EVENT_CHANNEL = "benchlocal:benchpacks:run-event";
+const WEB_PACK_CHAT_CHANNEL = "benchlocal:webpacks:chat";
+const WEB_PACK_STREAM_CHAT_CHANNEL = "benchlocal:webpacks:stream-chat";
+const WEB_PACK_STREAM_EVENT_CHANNEL = "benchlocal:webpacks:stream-event";
+const WEB_PACK_HISTORY_SAVE_CHANNEL = "benchlocal:webpacks:history-save";
+const WEB_PACK_ARTIFACT_WRITE_CHANNEL = "benchlocal:webpacks:artifact-write";
 const VERIFIERS_LIST_CHANNEL = "benchlocal:verifiers:list";
 const VERIFIERS_START_CHANNEL = "benchlocal:verifiers:start";
 const VERIFIERS_STOP_CHANNEL = "benchlocal:verifiers:stop";
@@ -271,6 +286,78 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(BENCH_PACK_HISTORY_DELETE_CHANNEL, async (_event, input: { benchPackId: string; runIds: string[] }) => {
     return benchLocalController.deleteRunHistory(input.benchPackId, input.runIds);
   });
+
+  ipcMain.handle(WEB_PACK_CHAT_CHANNEL, async (_event, input: BenchLocalChatRequest) => {
+    return benchLocalController.runWebPackChat(input);
+  });
+
+  ipcMain.on(
+    WEB_PACK_STREAM_CHAT_CHANNEL,
+    (
+      event,
+      input: {
+        streamId: string;
+        request: BenchLocalChatRequest;
+      }
+    ) => {
+      const sendStreamEvent = (streamEvent: BenchLocalChatStreamEvent, done = false) => {
+        event.sender.send(WEB_PACK_STREAM_EVENT_CHANNEL, {
+          streamId: input.streamId,
+          event: streamEvent,
+          done
+        });
+      };
+
+      void benchLocalController.streamWebPackChat(input.request, (streamEvent) => {
+        sendStreamEvent(streamEvent, streamEvent.type === "done" || streamEvent.type === "error");
+      }).catch((error) => {
+        sendStreamEvent(
+          {
+            type: "error",
+            modelId: input.request.modelId,
+            message: error instanceof Error ? error.message : String(error)
+          },
+          true
+        );
+      });
+    }
+  );
+
+  ipcMain.handle(
+    WEB_PACK_HISTORY_SAVE_CHANNEL,
+    async (
+      _event,
+      input: {
+        benchPackId: string;
+        runId?: string | null;
+        modelIds?: string[];
+        payload: WebBenchPackHistoryPayload;
+      }
+    ) => {
+      return benchLocalController.saveWebPackHistory(input);
+    }
+  );
+
+  ipcMain.handle(
+    WEB_PACK_ARTIFACT_WRITE_CHANNEL,
+    async (
+      _event,
+      input: {
+        benchPackId: string;
+        runId?: string | null;
+        modelIds?: string[];
+        artifact: {
+          kind: string;
+          label: string;
+          path?: string;
+          contentType?: string;
+          content: unknown;
+        };
+      }
+    ) => {
+      return benchLocalController.writeWebPackArtifact(input);
+    }
+  );
 
   ipcMain.handle(VERIFIERS_LIST_CHANNEL, async () => {
     return benchLocalController.listVerifiers();
