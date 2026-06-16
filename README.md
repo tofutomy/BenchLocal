@@ -32,6 +32,7 @@ Official Bench Packs today:
 - [BugFind-15](https://github.com/stevibe/BugFind-15)
 - [DataExtract-15](https://github.com/stevibe/DataExtract-15)
 - [InstructFollow-15](https://github.com/stevibe/InstructFollow-15)
+- [PromptAuthority-15](https://github.com/stevibe/PromptAuthority-15)
 - [ReasonMath-15](https://github.com/stevibe/ReasonMath-15)
 - [StructOutput-15](https://github.com/stevibe/StructOutput-15)
 - [CLI-40](https://github.com/stevibe/CLI-40)
