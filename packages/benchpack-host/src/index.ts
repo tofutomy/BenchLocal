@@ -44,6 +44,16 @@ import {
   type BenchPackManifest
 } from "@benchlocal/core";
 import { DEFAULT_BENCHLOCAL_GENERATION } from "@benchlocal/core";
+import {
+  reportInstallProgress,
+  type BenchPackInstallAction,
+  type BenchPackInstallProgress,
+  type InstallProgressReporter
+} from "./install-progress.js";
+import { mergeSummaryEvents } from "./run-summary.js";
+import { bootstrapVerifierConfig, getManifestVerifiers, getVerifierUrl } from "./verifier-config.js";
+
+export type { BenchPackInstallProgress } from "./install-progress.js";
 
 export type BenchPackHostStatus = "idle" | "loading" | "ready" | "error";
 
@@ -1260,33 +1270,6 @@ export async function loadBenchPackRegistry(config: BenchLocalConfig): Promise<B
   }
 
   return parsed.packs.slice().sort((left, right) => left.name.localeCompare(right.name));
-}
-
-type BenchPackInstallAction = "install" | "update" | "uninstall";
-type BenchPackInstallPhase =
-  | "resolving"
-  | "downloading"
-  | "extracting"
-  | "hydrating"
-  | "validating"
-  | "activating"
-  | "removing"
-  | "complete";
-
-export type BenchPackInstallProgress = {
-  benchPackId: string;
-  action: BenchPackInstallAction;
-  phase: BenchPackInstallPhase;
-  message: string;
-};
-
-type InstallProgressReporter = (progress: BenchPackInstallProgress) => void | Promise<void>;
-
-async function reportInstallProgress(
-  reporter: InstallProgressReporter | undefined,
-  progress: BenchPackInstallProgress
-): Promise<void> {
-  await reporter?.(progress);
 }
 
 async function downloadBenchPackArchive(
@@ -2540,14 +2523,6 @@ function getProviderDisplayName(provider: HostContext["providers"][number] | und
   return provider?.name?.trim() || fallbackProviderDisplayName(providerId);
 }
 
-function mergeSummaryEvents(current: ProgressEvent[], persisted?: ProgressEvent[]): ProgressEvent[] {
-  if (!persisted || persisted.length <= current.length) {
-    return current;
-  }
-
-  return [...current, ...persisted.slice(current.length)];
-}
-
 function createHostLogger(benchPackId: string, hostLogPath: string): HostContext["logger"] {
   return {
     debug(message, meta) {
@@ -3356,20 +3331,6 @@ async function waitForVerifierReady(
   return false;
 }
 
-function getManifestVerifiers(manifest: BenchPackManifest): VerifierSpec[] {
-  return manifest.verifiers ?? manifest.sidecars ?? [];
-}
-
-function bootstrapVerifierConfig(spec: VerifierSpec, existing?: BenchLocalVerifierConfig): BenchLocalVerifierConfig {
-  return {
-    mode: existing?.mode ?? spec.defaultMode,
-    auto_start: existing?.auto_start ?? true,
-    custom_url: existing?.custom_url ?? spec.customUrl?.defaultUrl,
-    cloud_url: existing?.cloud_url ?? spec.cloud?.baseUrl,
-    docker_image: existing?.docker_image ?? spec.docker?.image
-  };
-}
-
 function bootstrapBenchPackConfigFromManifest(
   manifest: BenchPackManifest,
   entry: BenchPackRegistryEntry,
@@ -3394,31 +3355,6 @@ function bootstrapBenchPackConfigFromManifest(
     version: entry.version,
     auto_update: existing?.auto_update,
     verifiers
-  };
-}
-
-function getVerifierUrl(spec: VerifierSpec, config?: BenchLocalVerifierConfig): { mode: VerifierMode; url?: string; port?: number; details?: string } {
-  const mode = config?.mode ?? spec.defaultMode;
-
-  if (mode === "docker") {
-    return {
-      mode,
-      details: "BenchLocal assigns a free local port automatically."
-    };
-  }
-
-  if (mode === "cloud") {
-    return {
-      mode,
-      url: config?.cloud_url ?? spec.cloud?.baseUrl,
-      details: spec.cloud?.baseUrl ?? config?.cloud_url
-    };
-  }
-
-  return {
-    mode,
-    url: config?.custom_url ?? spec.customUrl?.defaultUrl,
-    details: config?.custom_url ?? spec.customUrl?.defaultUrl
   };
 }
 

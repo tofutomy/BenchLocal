@@ -6,3 +6,4 @@ out
 .DS_Store
 .env.release.local
 .env.release.*.local
+coverage

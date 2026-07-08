@@ -7,7 +7,9 @@
     "packages/*"
   ],
   "devDependencies": {
-    "electron": "37.2.0"
+    "@vitest/coverage-v8": "^4.1.10",
+    "electron": "37.2.0",
+    "vitest": "^4.1.10"
   },
   "scripts": {
     "dev": "npm run dev --workspace app",
@@ -23,6 +25,10 @@
     "release:setup:mac": "node scripts/setup-macos-release.mjs",
     "release:doctor:mac": "node scripts/check-macos-release.mjs",
     "release:mac": "node scripts/build-macos-release.mjs",
-    "typecheck": "npm run typecheck --workspace @benchlocal/core && npm run typecheck --workspace @benchlocal/sdk && npm run typecheck --workspace @benchlocal/web-sdk && npm run typecheck --workspace @benchlocal/benchpack-host && npm run typecheck --workspace app"
+    "typecheck": "npm run typecheck --workspace @benchlocal/core && npm run typecheck --workspace @benchlocal/sdk && npm run typecheck --workspace @benchlocal/web-sdk && npm run typecheck --workspace @benchlocal/benchpack-host && npm run typecheck --workspace app",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "ci": "npm run typecheck && npm run test"
   }
 }
