@@ -51,6 +51,7 @@ npm run dev:devtools     # 开发模式 + 打开 DevTools
 npm run build            # 编译所有 workspace 包 + app
 npm run typecheck        # 全局类型检查（无测试框架，类型检查是主要验证手段）
 npm run pack             # 编译 + 打包生产桌面应用
+npm run build:compile    # 编译
 npm run build:win        # Windows (NSIS + ZIP)
 npm run build:mac        # macOS (DMG + ZIP)
 npm run build:linux      # Linux (AppImage + tar.gz)
