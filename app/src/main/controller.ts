@@ -30,26 +30,24 @@ import {
 } from "@core";
 import {
   deleteConfiguredBenchPackVerifierImage,
-  deleteRunHistoryForBenchPack,
   getConfiguredBenchPackVerifierStatus,
-  installBenchPackFromRegistry,
-  installBenchPackFromUrl,
   inspectConfiguredBenchPacks,
-  clearRunHistoryForBenchPack,
-  listRunHistoryForBenchPack,
-  loadBenchPackRegistry,
   loadRunSummaryForBenchPack,
   resumeBenchPackRun,
   retryScenarioForBenchPackRun,
   runConfiguredBenchPack,
   startConfiguredBenchPackVerifiers,
   stopConfiguredBenchPackVerifiers,
-  uninstallBenchPack,
-  updateBenchPackFromRegistry
 } from "@benchpack-host";
 import type { BenchLocalDiscoveredModel } from "@/shared/desktop-api";
 import { AgentEventBus } from "./services/agent-event-bus";
 import { ConfigService } from "./services/config-service";
+import {
+  BenchPackService,
+  type BenchPackMutationProgress,
+  type RuntimeCompatibility
+} from "./services/benchpack-service";
+import { HistoryService } from "./services/history-service";
 import { ModelService } from "./services/model-service";
 import { ProviderService } from "./services/provider-service";
 import {
@@ -61,9 +59,6 @@ import { loadAppMetadata } from "./app-metadata";
 
 export type { BenchLocalControllerEventName } from "./services/agent-event-bus";
 
-type RuntimeCompatibility = {
-  benchLocalVersion: string;
-};
 
 type ProgressCallback = (event: ProgressEvent) => void;
 
@@ -84,12 +79,6 @@ type RetryBatchPlan = {
   groups: RetryScenarioCell[][];
 };
 
-type BenchPackMutationProgress = {
-  benchPackId: string;
-  action: "install" | "update" | "uninstall";
-  phase: "resolving" | "downloading" | "extracting" | "hydrating" | "validating" | "activating" | "removing" | "complete";
-  message: string;
-};
 
 type VerifierPreparationProgress = Extract<ProgressEvent, { type: "verifier_preparing" }>;
 
@@ -410,6 +399,8 @@ export class BenchLocalController {
   private readonly workspaceService = new WorkspaceService(this.eventBus, this.configService);
   private readonly providerService = new ProviderService(this.configService, this.workspaceService);
   private readonly modelService = new ModelService(this.eventBus, this.configService, this.workspaceService);
+  private readonly benchPackService = new BenchPackService(this.configService, () => this.getRuntimeCompatibility());
+  private readonly historyService = new HistoryService(this.configService);
   private readonly activeBenchPackRuns = new Map<
     string,
     {
@@ -506,67 +497,29 @@ export class BenchLocalController {
   checkModelAvailability(input: { config: BenchLocalConfig; modelIds?: string[] }) {
     return this.modelService.checkModelAvailability(input);
   }
-  async listBenchPacks() {
-    const { config } = await loadOrCreateConfig();
-    return inspectConfiguredBenchPacks(config, await this.getRuntimeCompatibility());
+  listBenchPacks() {
+    return this.benchPackService.listBenchPacks();
   }
 
-  async loadBenchPackRegistry() {
-    const { config } = await loadOrCreateConfig();
-    return loadBenchPackRegistry(config);
+  loadBenchPackRegistry() {
+    return this.benchPackService.loadBenchPackRegistry();
   }
 
-  async installBenchPack(benchPackId: string, onProgress?: (progress: BenchPackMutationProgress) => void) {
-    const { config } = await loadOrCreateConfig();
-    const saved = await installBenchPackFromRegistry(
-      config,
-      benchPackId,
-      (progress) => {
-        onProgress?.(progress);
-      },
-      await this.getRuntimeCompatibility()
-    );
-
-    return this.saveConfig(saved);
+  installBenchPack(benchPackId: string, onProgress?: (progress: BenchPackMutationProgress) => void) {
+    return this.benchPackService.installBenchPack(benchPackId, onProgress);
   }
 
-  async installBenchPackFromUrl(url: string, onProgress?: (progress: BenchPackMutationProgress) => void) {
-    const { config } = await loadOrCreateConfig();
-    const saved = await installBenchPackFromUrl(
-      config,
-      url,
-      (progress) => {
-        onProgress?.(progress);
-      },
-      await this.getRuntimeCompatibility()
-    );
-
-    return this.saveConfig(saved);
+  installBenchPackFromUrl(url: string, onProgress?: (progress: BenchPackMutationProgress) => void) {
+    return this.benchPackService.installBenchPackFromUrl(url, onProgress);
   }
 
-  async updateBenchPack(benchPackId: string, onProgress?: (progress: BenchPackMutationProgress) => void) {
-    const { config } = await loadOrCreateConfig();
-    const saved = await updateBenchPackFromRegistry(
-      config,
-      benchPackId,
-      (progress) => {
-        onProgress?.(progress);
-      },
-      await this.getRuntimeCompatibility()
-    );
-
-    return this.saveConfig(saved);
+  updateBenchPack(benchPackId: string, onProgress?: (progress: BenchPackMutationProgress) => void) {
+    return this.benchPackService.updateBenchPack(benchPackId, onProgress);
   }
 
-  async uninstallBenchPack(benchPackId: string, onProgress?: (progress: BenchPackMutationProgress) => void) {
-    const { config } = await loadOrCreateConfig();
-    const saved = await uninstallBenchPack(config, benchPackId, (progress) => {
-      onProgress?.(progress);
-    });
-
-    return this.saveConfig(saved);
+  uninstallBenchPack(benchPackId: string, onProgress?: (progress: BenchPackMutationProgress) => void) {
+    return this.benchPackService.uninstallBenchPack(benchPackId, onProgress);
   }
-
   async listActiveRuns() {
     return Array.from(this.activeBenchPackRuns.entries()).map(([tabId, run]) => ({
       tabId,
@@ -574,26 +527,21 @@ export class BenchLocalController {
     }));
   }
 
-  async listRunHistory(benchPackId: string) {
-    const { config } = await loadOrCreateConfig();
-    return listRunHistoryForBenchPack(config, benchPackId);
+  listRunHistory(benchPackId: string) {
+    return this.historyService.listRunHistory(benchPackId);
   }
 
-  async loadRunHistory(benchPackId: string, runId: string) {
-    const { config } = await loadOrCreateConfig();
-    return loadRunSummaryForBenchPack(config, benchPackId, runId);
+  loadRunHistory(benchPackId: string, runId: string) {
+    return this.historyService.loadRunHistory(benchPackId, runId);
   }
 
-  async clearRunHistory(benchPackId: string) {
-    const { config } = await loadOrCreateConfig();
-    return clearRunHistoryForBenchPack(config, benchPackId);
+  clearRunHistory(benchPackId: string) {
+    return this.historyService.clearRunHistory(benchPackId);
   }
 
-  async deleteRunHistory(benchPackId: string, runIds: string[]) {
-    const { config } = await loadOrCreateConfig();
-    return deleteRunHistoryForBenchPack(config, benchPackId, runIds);
+  deleteRunHistory(benchPackId: string, runIds: string[]) {
+    return this.historyService.deleteRunHistory(benchPackId, runIds);
   }
-
   private async getWebBenchPackManifest(config: BenchLocalConfig, benchPackId: string) {
     const inspections = await inspectConfiguredBenchPacks(config, await this.getRuntimeCompatibility());
     const inspection = inspections.find((candidate) => candidate.id === benchPackId);
