@@ -21,15 +21,11 @@ import type {
 } from "@core";
 import { loadOrCreateConfig } from "@core";
 import {
-  deleteConfiguredBenchPackVerifierImage,
-  getConfiguredBenchPackVerifierStatus,
   inspectConfiguredBenchPacks,
   loadRunSummaryForBenchPack,
   resumeBenchPackRun,
   retryScenarioForBenchPackRun,
   runConfiguredBenchPack,
-  startConfiguredBenchPackVerifiers,
-  stopConfiguredBenchPackVerifiers,
 } from "@benchpack-host";
 import type { BenchLocalDiscoveredModel } from "@/shared/desktop-api";
 import { AgentEventBus } from "./services/agent-event-bus";
@@ -40,6 +36,10 @@ import {
   type RuntimeCompatibility
 } from "./services/benchpack-service";
 import { HistoryService } from "./services/history-service";
+import {
+  VerifierService,
+  type VerifierPreparationProgress
+} from "./services/verifier-service";
 import { ModelService } from "./services/model-service";
 import { ProviderService } from "./services/provider-service";
 import { WorkspaceService } from "./services/workspace-service";
@@ -73,10 +73,8 @@ type RetryBatchPlan = {
 };
 
 
-type VerifierPreparationProgress = Extract<ProgressEvent, { type: "verifier_preparing" }>;
 
 const RUN_RELEASE_TIMEOUT_MS = 5000;
-const VERIFIER_RELEASE_TIMEOUT_MS = 15000;
 function uniqueValues(values: string[]): string[] {
   return values.filter((value, index, all) => Boolean(value) && all.indexOf(value) === index);
 }
@@ -178,16 +176,11 @@ export class BenchLocalController {
   private readonly benchPackService = new BenchPackService(this.configService, () => this.getRuntimeCompatibility());
   private readonly historyService = new HistoryService(this.configService);
   private readonly webPackService = new WebPackService(this.configService, this.benchPackService, this.historyService);
+  private readonly verifierService = new VerifierService(this.eventBus, this.configService, this.benchPackService);
   private readonly activeBenchPackRuns = new Map<
     string,
     {
       benchPackId: string;
-      controller: AbortController;
-    }
-  >();
-  private readonly activeVerifierStarts = new Map<
-    string,
-    {
       controller: AbortController;
     }
   >();
@@ -339,79 +332,28 @@ export class BenchLocalController {
   ): Promise<{ summary: BenchPackRunSummary; artifact: ArtifactRef }> {
     return this.webPackService.writeWebPackArtifact(input);
   }
-  async listVerifiers() {
-    const { config } = await loadOrCreateConfig();
-    const inspections = await inspectConfiguredBenchPacks(config, await this.getRuntimeCompatibility());
-    const relevant = inspections.filter((inspection) => inspection.manifest?.capabilities.verification || inspection.manifest?.capabilities.sidecars);
-    return Promise.all(relevant.map((inspection) => getConfiguredBenchPackVerifierStatus(config, inspection.id)));
+  listVerifiers() {
+    return this.verifierService.listVerifiers();
   }
 
-  async startVerifier(
+  startVerifier(
     benchPackId: string,
     onProgress?: (progress: VerifierPreparationProgress) => void
   ) {
-    const existingActiveStart = this.activeVerifierStarts.get(benchPackId);
-
-    if (existingActiveStart) {
-      if (existingActiveStart.controller.signal.aborted) {
-        await this.waitForVerifierStartRelease(benchPackId);
-      } else {
-        throw new Error(`Verifier startup is already active for Bench Pack "${benchPackId}".`);
-      }
-    }
-
-    const { config } = await loadOrCreateConfig();
-    const currentStatus = await getConfiguredBenchPackVerifierStatus(config, benchPackId);
-    const controller = new AbortController();
-    this.activeVerifierStarts.set(benchPackId, {
-      controller
-    });
-
-    try {
-      return await startConfiguredBenchPackVerifiers(config, benchPackId, {
-        abortSignal: controller.signal,
-        onProgress: (progress) => {
-          const event: VerifierPreparationProgress = {
-            type: "verifier_preparing",
-            benchPackId,
-            benchPackName: currentStatus.benchPackName,
-            verifierId: progress.verifierId,
-            phase: progress.phase,
-            message: progress.message
-          };
-          this.emitAgentEvent("verifier.event", {
-            benchPackId,
-            event
-          });
-          onProgress?.(event);
-        }
-      });
-    } finally {
-      this.activeVerifierStarts.delete(benchPackId);
-    }
+    return this.verifierService.startVerifier(benchPackId, onProgress);
   }
 
-  async stopVerifier(benchPackId: string) {
-    const { config } = await loadOrCreateConfig();
-    return stopConfiguredBenchPackVerifiers(config, benchPackId);
+  stopVerifier(benchPackId: string) {
+    return this.verifierService.stopVerifier(benchPackId);
   }
 
-  async cancelVerifierStart(benchPackId: string) {
-    const activeStart = this.activeVerifierStarts.get(benchPackId);
-
-    if (!activeStart) {
-      return { cancelled: false };
-    }
-
-    activeStart.controller.abort(new Error("Verifier start cancelled by user."));
-    return { cancelled: true };
+  cancelVerifierStart(benchPackId: string) {
+    return this.verifierService.cancelVerifierStart(benchPackId);
   }
 
-  async deleteVerifierImage(benchPackId: string, verifierId: string) {
-    const { config } = await loadOrCreateConfig();
-    return deleteConfiguredBenchPackVerifierImage(config, benchPackId, verifierId);
+  deleteVerifierImage(benchPackId: string, verifierId: string) {
+    return this.verifierService.deleteVerifierImage(benchPackId, verifierId);
   }
-
   async runBenchPack(
     input: {
       tabId: string;
@@ -640,7 +582,7 @@ export class BenchLocalController {
       intervalMs?: number;
     }
   ): Promise<void> {
-    if (this.activeBenchPackRuns.size === 0 && this.activeVerifierStarts.size === 0) {
+    if (this.activeBenchPackRuns.size === 0 && !this.verifierService.hasActiveStarts()) {
       return;
     }
 
@@ -648,15 +590,13 @@ export class BenchLocalController {
       activeRun.controller.abort(new Error("Run cancelled because BenchLocal is shutting down."));
     }
 
-    for (const activeStart of this.activeVerifierStarts.values()) {
-      activeStart.controller.abort(new Error("Verifier start cancelled because BenchLocal is shutting down."));
-    }
+    this.verifierService.cancelActiveStartsForShutdown();
 
     const timeoutMs = options?.timeoutMs ?? 15000;
     const intervalMs = options?.intervalMs ?? 50;
     const deadline = Date.now() + timeoutMs;
 
-    while (this.activeBenchPackRuns.size > 0 || this.activeVerifierStarts.size > 0) {
+    while (this.activeBenchPackRuns.size > 0 || this.verifierService.hasActiveStarts()) {
       if (Date.now() >= deadline) {
         throw new Error("Timed out while waiting for active Bench Pack work to stop.");
       }
@@ -739,17 +679,6 @@ export class BenchLocalController {
     }
   }
 
-  private async waitForVerifierStartRelease(benchPackId: string) {
-    const deadline = Date.now() + VERIFIER_RELEASE_TIMEOUT_MS;
-
-    while (this.activeVerifierStarts.has(benchPackId)) {
-      if (Date.now() >= deadline) {
-        throw new Error(`Timed out while waiting for verifier startup "${benchPackId}" to stop.`);
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-  }
 
   private emitRunEvent(tabId: string, benchPackId: string, event: ProgressEvent) {
     this.emitAgentEvent("benchpack.run.event", {
