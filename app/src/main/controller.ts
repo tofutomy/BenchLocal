@@ -1,4 +1,3 @@
-import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -18,7 +17,6 @@ import type {
   BenchLocalExecutionMode,
   BenchLocalProviderConfig,
   BenchLocalProviderKind,
-  BenchLocalWorkspaceState,
   BenchLocalWorkspaceTabModelSelection,
   BenchPackRunSummary,
   GenerationRequest,
@@ -29,12 +27,7 @@ import type {
 import {
   DEFAULT_BENCHLOCAL_GENERATION,
   expandHomePath,
-  getConfigPath,
-  getWorkspaceStatePath,
-  loadOrCreateConfig,
-  loadOrCreateWorkspaceState,
-  saveConfigFile,
-  saveWorkspaceStateFile
+  loadOrCreateConfig
 } from "@core";
 import {
   checkConfiguredModelAvailability,
@@ -57,9 +50,12 @@ import {
   updateBenchPackFromRegistry
 } from "@benchpack-host";
 import type { BenchLocalDiscoveredModel } from "@/shared/desktop-api";
+import { AgentEventBus } from "./services/agent-event-bus";
+import { ConfigService, redactConfig } from "./services/config-service";
+import { WorkspaceService } from "./services/workspace-service";
 import { loadAppMetadata } from "./app-metadata";
 
-export type BenchLocalControllerEventName = "agent-event";
+export type { BenchLocalControllerEventName } from "./services/agent-event-bus";
 
 type RuntimeCompatibility = {
   benchLocalVersion: string;
@@ -307,15 +303,6 @@ function patchModelConfig(
   );
 }
 
-function createAgentEvent<TPayload>(type: BenchLocalAgentEvent["type"], payload: TPayload): BenchLocalAgentEvent<TPayload> {
-  return {
-    eventId: `evt-${randomUUID()}`,
-    createdAt: new Date().toISOString(),
-    type,
-    payload
-  };
-}
-
 function providerSupportsModelDiscovery(provider: BenchLocalProviderConfig): boolean {
   return provider.kind === "openrouter" || provider.kind === "huggingface" || provider.kind === "openai_compatible";
 }
@@ -395,42 +382,6 @@ function mapDiscoveredModel(input: unknown): BenchLocalDiscoveredModel | null {
     pricing: formatModelPricing(record.pricing),
     modality
   };
-}
-
-function normalizeRunsPerTest(value: unknown): number {
-  return [1, 3, 5, 7, 9].includes(value as number) ? (value as number) : 1;
-}
-
-function normalizeModelSelections(
-  selections: BenchLocalWorkspaceTabModelSelection[],
-  config: BenchLocalConfig
-): BenchLocalWorkspaceTabModelSelection[] {
-  const availableIds = new Set(config.models.filter((model) => model.enabled).map((model) => model.id));
-  const seen = new Set<string>();
-  const normalized: BenchLocalWorkspaceTabModelSelection[] = [];
-
-  for (const selection of selections) {
-    const modelId = selection.modelId.trim();
-
-    if (!modelId || seen.has(modelId) || !availableIds.has(modelId)) {
-      continue;
-    }
-
-    seen.add(modelId);
-    normalized.push({
-      modelId,
-      ...(selection.alias?.trim() ? { alias: selection.alias.trim() } : {})
-    });
-  }
-
-  return normalized;
-}
-
-function normalizeModelIds(modelIds: string[], config: BenchLocalConfig): BenchLocalWorkspaceTabModelSelection[] {
-  return normalizeModelSelections(
-    modelIds.map((modelId) => ({ modelId })),
-    config
-  );
 }
 
 function uniqueValues(values: string[]): string[] {
@@ -523,26 +474,6 @@ function groupRetryCellsForExecutionMode(
     default:
       return singletonByScenarioThenModel;
   }
-}
-
-function redactConfig(config: BenchLocalConfig): BenchLocalAgentSafeConfig {
-  return {
-    ...config,
-    providers: Object.fromEntries(
-      Object.entries(config.providers).map(([providerId, provider]) => [
-        providerId,
-        {
-          kind: provider.kind,
-          name: provider.name,
-          enabled: provider.enabled,
-          base_url: provider.base_url,
-          api_key_env: provider.api_key_env,
-          has_api_key: Boolean(provider.api_key?.trim()),
-          has_api_key_env: Boolean(provider.api_key_env?.trim())
-        }
-      ])
-    )
-  };
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -763,7 +694,9 @@ function artifactContentToBuffer(content: unknown): Buffer {
 }
 
 export class BenchLocalController {
-  private readonly events = new EventEmitter();
+  private readonly eventBus = new AgentEventBus();
+  private readonly configService = new ConfigService(this.eventBus);
+  private readonly workspaceService = new WorkspaceService(this.eventBus, this.configService);
   private readonly activeBenchPackRuns = new Map<
     string,
     {
@@ -779,14 +712,14 @@ export class BenchLocalController {
   >();
 
   onAgentEvent(listener: (event: BenchLocalAgentEvent) => void): () => void {
-    this.events.on("agent-event", listener);
-    return () => this.events.off("agent-event", listener);
+    return this.eventBus.onAgentEvent(listener);
   }
 
-  emitAgentEvent<TPayload>(type: BenchLocalAgentEvent["type"], payload: TPayload): BenchLocalAgentEvent<TPayload> {
-    const event = createAgentEvent(type, payload);
-    this.events.emit("agent-event", event);
-    return event;
+  emitAgentEvent<TPayload>(
+    type: BenchLocalAgentEvent["type"],
+    payload: TPayload
+  ): BenchLocalAgentEvent<TPayload> {
+    return this.eventBus.emitAgentEvent(type, payload);
   }
 
   async getRuntimeCompatibility(): Promise<RuntimeCompatibility> {
@@ -797,44 +730,20 @@ export class BenchLocalController {
     };
   }
 
-  async loadConfig() {
-    return loadOrCreateConfig();
+  loadConfig() {
+    return this.configService.loadConfig();
   }
 
-  async saveConfig(config: BenchLocalConfig) {
-    const saved = await saveConfigFile(config, getConfigPath());
-    const result = {
-      path: getConfigPath(),
-      created: false,
-      config: saved
-    };
-
-    this.emitAgentEvent("config.updated", {
-      config: redactConfig(saved)
-    });
-
-    return result;
+  saveConfig(config: BenchLocalConfig) {
+    return this.configService.saveConfig(config);
   }
 
-  async loadWorkspaceState() {
-    await loadOrCreateConfig();
-    return loadOrCreateWorkspaceState(getWorkspaceStatePath());
+  loadWorkspaceState() {
+    return this.workspaceService.loadWorkspaceState();
   }
 
-  async saveWorkspaceState(state: BenchLocalWorkspaceState) {
-    await loadOrCreateConfig();
-    const saved = await saveWorkspaceStateFile(state, getWorkspaceStatePath());
-    const result = {
-      path: getWorkspaceStatePath(),
-      created: false,
-      state: saved
-    };
-
-    this.emitAgentEvent("workspace.updated", {
-      state: saved
-    });
-
-    return result;
+  saveWorkspaceState(state: Parameters<WorkspaceService["saveWorkspaceState"]>[0]) {
+    return this.workspaceService.saveWorkspaceState(state);
   }
 
   async listProviders() {
@@ -897,7 +806,7 @@ export class BenchLocalController {
     const saved = await this.saveConfig(nextConfig);
 
     if (removedModelIds.size > 0) {
-      await this.removeWorkspaceModelSelections(removedModelIds);
+      await this.workspaceService.removeModelSelections(removedModelIds);
     }
 
     return {
@@ -993,7 +902,7 @@ export class BenchLocalController {
     const saved = await this.saveConfig(nextConfig);
 
     if (model.id !== modelId) {
-      await this.replaceWorkspaceModelSelectionId(modelId, model.id);
+      await this.workspaceService.replaceModelSelectionId(modelId, model.id);
     }
 
     return {
@@ -1015,7 +924,7 @@ export class BenchLocalController {
 
     const [removedModel] = nextConfig.models.splice(index, 1);
     const saved = await this.saveConfig(nextConfig);
-    await this.removeWorkspaceModelSelections(new Set([modelId]));
+    await this.workspaceService.removeModelSelections(new Set([modelId]));
 
     return {
       modelId,
@@ -1777,7 +1686,7 @@ export class BenchLocalController {
     }
   }
 
-  async createWorkspaceTab(
+  createWorkspaceTab(
     workspaceId: string,
     input: {
       benchPackId?: string | null;
@@ -1785,41 +1694,10 @@ export class BenchLocalController {
       modelSelections?: BenchLocalWorkspaceTabModelSelection[];
     }
   ) {
-    const { config } = await loadOrCreateConfig();
-
-    return this.mutateWorkspaceState((state) => {
-      const workspace = state.workspaces[workspaceId];
-
-      if (!workspace) {
-        throw new Error(`Workspace "${workspaceId}" was not found.`);
-      }
-
-      const now = new Date().toISOString();
-      const tabId = `tab-${randomUUID()}`;
-      const benchPackId = input.benchPackId?.trim() || null;
-
-      state.tabs[tabId] = {
-        id: tabId,
-        title: input.title?.trim() || (benchPackId ? this.createTabTitle(benchPackId) : "New Tab"),
-        benchPackId,
-        loadedRunId: null,
-        focusedScenarioId: null,
-        modelSelections: normalizeModelSelections(input.modelSelections ?? [], config),
-        samplingOverrides: {},
-        executionMode: "parallel_by_test_case",
-        runsPerTest: 1,
-        createdAt: now,
-        updatedAt: now
-      };
-      workspace.tabIds.push(tabId);
-      workspace.activeTabId = tabId;
-      workspace.updatedAt = now;
-
-      return state;
-    });
+    return this.workspaceService.createWorkspaceTab(workspaceId, input);
   }
 
-  async patchTab(
+  patchTab(
     tabId: string,
     patch: Partial<{
       title: string;
@@ -1830,136 +1708,26 @@ export class BenchLocalController {
       runsPerTest: number;
     }>
   ) {
-    const { config } = await loadOrCreateConfig();
-
-    return this.mutateWorkspaceState((state) => {
-      const tab = state.tabs[tabId];
-
-      if (!tab) {
-        throw new Error(`Tab "${tabId}" was not found.`);
-      }
-
-      if (patch.title !== undefined) {
-        tab.title = patch.title.trim() || "New Tab";
-      }
-
-      if (patch.focusedScenarioId !== undefined) {
-        tab.focusedScenarioId = patch.focusedScenarioId?.trim() || null;
-      }
-
-      if (patch.modelSelections !== undefined) {
-        tab.modelSelections = normalizeModelSelections(patch.modelSelections, config);
-      }
-
-      if (patch.samplingOverrides !== undefined) {
-        tab.samplingOverrides = patch.samplingOverrides;
-      }
-
-      if (patch.executionMode !== undefined) {
-        tab.executionMode = patch.executionMode;
-      }
-
-      if (patch.runsPerTest !== undefined) {
-        tab.runsPerTest = normalizeRunsPerTest(patch.runsPerTest);
-      }
-
-      tab.updatedAt = new Date().toISOString();
-      return state;
-    });
+    return this.workspaceService.patchTab(tabId, patch);
   }
 
-  async selectTabBenchPack(tabId: string, benchPackId: string | null, title?: string) {
-    return this.mutateWorkspaceState((state) => {
-      const tab = state.tabs[tabId];
-
-      if (!tab) {
-        throw new Error(`Tab "${tabId}" was not found.`);
-      }
-
-      const normalizedBenchPackId = benchPackId?.trim() || null;
-      tab.benchPackId = normalizedBenchPackId;
-      tab.loadedRunId = null;
-      tab.focusedScenarioId = null;
-      tab.title = title?.trim() || (normalizedBenchPackId ? this.createTabTitle(normalizedBenchPackId) : "New Tab");
-      tab.updatedAt = new Date().toISOString();
-
-      return state;
-    });
+  selectTabBenchPack(tabId: string, benchPackId: string | null, title?: string) {
+    return this.workspaceService.selectTabBenchPack(tabId, benchPackId, title);
   }
 
-  async selectTabModels(tabId: string, input: { modelIds?: string[]; selections?: BenchLocalWorkspaceTabModelSelection[] }) {
-    const { config } = await loadOrCreateConfig();
-
-    return this.mutateWorkspaceState((state) => {
-      const tab = state.tabs[tabId];
-
-      if (!tab) {
-        throw new Error(`Tab "${tabId}" was not found.`);
-      }
-
-      tab.modelSelections = input.selections
-        ? normalizeModelSelections(input.selections, config)
-        : normalizeModelIds(input.modelIds ?? [], config);
-      tab.loadedRunId = null;
-      tab.updatedAt = new Date().toISOString();
-
-      return state;
-    });
+  selectTabModels(
+    tabId: string,
+    input: { modelIds?: string[]; selections?: BenchLocalWorkspaceTabModelSelection[] }
+  ) {
+    return this.workspaceService.selectTabModels(tabId, input);
   }
 
-  async setTabLoadedRun(tabId: string, runId: string | null) {
-    return this.mutateWorkspaceState((state) => {
-      const tab = state.tabs[tabId];
-
-      if (!tab) {
-        return state;
-      }
-
-      tab.loadedRunId = runId;
-      tab.updatedAt = new Date().toISOString();
-      return state;
-    });
+  setTabLoadedRun(tabId: string, runId: string | null) {
+    return this.workspaceService.setTabLoadedRun(tabId, runId);
   }
 
-  async getSafeConfig(): Promise<BenchLocalAgentSafeConfig> {
-    const { config } = await loadOrCreateConfig();
-    return redactConfig(config);
-  }
-
-  private async mutateWorkspaceState(updater: (state: BenchLocalWorkspaceState) => BenchLocalWorkspaceState) {
-    const { state } = await this.loadWorkspaceState();
-    const nextState = updater(structuredClone(state));
-    return this.saveWorkspaceState(nextState);
-  }
-
-  private async removeWorkspaceModelSelections(modelIds: Set<string>) {
-    if (modelIds.size === 0) {
-      return this.loadWorkspaceState();
-    }
-
-    return this.mutateWorkspaceState((state) => {
-      for (const tab of Object.values(state.tabs)) {
-        tab.modelSelections = tab.modelSelections.filter((selection) => !modelIds.has(selection.modelId));
-      }
-
-      return state;
-    });
-  }
-
-  private async replaceWorkspaceModelSelectionId(previousModelId: string, nextModelId: string) {
-    if (previousModelId === nextModelId) {
-      return this.loadWorkspaceState();
-    }
-
-    return this.mutateWorkspaceState((state) => {
-      for (const tab of Object.values(state.tabs)) {
-        tab.modelSelections = tab.modelSelections.map((selection) =>
-          selection.modelId === previousModelId ? { ...selection, modelId: nextModelId } : selection
-        );
-      }
-
-      return state;
-    });
+  getSafeConfig(): Promise<BenchLocalAgentSafeConfig> {
+    return this.configService.getSafeConfig();
   }
 
   private async prepareRunSlot(tabId: string, benchPackId: string) {
@@ -2020,13 +1788,6 @@ export class BenchLocalController {
     }
   }
 
-  private createTabTitle(benchPackId: string): string {
-    return benchPackId
-      .split(/[-_]+/g)
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ") || "New Tab";
-  }
 }
 
 export const benchLocalController = new BenchLocalController();
