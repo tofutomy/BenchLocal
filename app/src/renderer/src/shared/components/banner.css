@@ -1,0 +1,43 @@
+.banner {
+  margin: 10px 12px 0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+}
+
+.banner-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.banner-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.banner-dismiss {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.78;
+}
+
+.banner-dismiss:hover {
+  background: var(--neutral-soft);
+  opacity: 1;
+}
+
+.banner-success { background: var(--pass-soft); color: var(--pass); }
+.banner-danger { background: var(--fail-soft); color: var(--fail); }
+.banner-neutral { background: var(--neutral-soft); color: var(--muted); }
+.banner-warning { background: var(--banner-warning-bg); color: var(--banner-warning-ink); }

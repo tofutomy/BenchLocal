@@ -1,0 +1,195 @@
+.table-scrollbar {
+  position: relative;
+  height: 12px;
+  margin: 0 12px 12px;
+  border-radius: 999px;
+  background: var(--scrollbar-track);
+  cursor: pointer;
+}
+
+.table-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  border: 2px solid var(--scrollbar-thumb-border);
+  cursor: grab;
+}
+
+.table-scrollbar-thumb:active {
+  cursor: grabbing;
+}
+
+.config-input {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: var(--surface-strong);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  box-shadow: inset 0 1px 0 var(--glass-border);
+}
+
+select.config-input {
+  display: block;
+  appearance: none;
+  line-height: 1.2;
+  padding-right: 36px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% - 2px),
+    calc(100% - 12px) calc(50% - 2px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+.config-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.toggle-label {
+  font-size: 0.9rem;
+}
+
+.field-toggle {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: var(--surface-strong);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: inset 0 1px 0 var(--glass-border);
+}
+
+.settings-list-table-wrap {
+  overflow: hidden;
+  display: grid;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  box-shadow: inset 0 1px 0 var(--glass-border);
+}
+
+.settings-table-scroll {
+  display: block;
+  overflow: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable both-edges;
+}
+
+.settings-list-table-wrap.has-sticky-last-column-shadow .settings-list-table th:last-child,
+.settings-list-table-wrap.has-sticky-last-column-shadow .settings-list-table td:last-child:not([colspan]) {
+  overflow: hidden;
+}
+
+.settings-list-table-wrap.has-sticky-last-column-shadow .settings-list-table th:last-child::before,
+.settings-list-table-wrap.has-sticky-last-column-shadow .settings-list-table td:last-child:not([colspan])::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -18px;
+  width: 18px;
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.06), transparent);
+  pointer-events: none;
+}
+
+.settings-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.settings-panel .panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panel-header-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.panel-header-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.panel-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--neutral-soft);
+  color: var(--muted);
+}
+
+.panel-icon-sky {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.panel-icon-orange {
+  background: var(--partial-soft);
+  color: var(--partial);
+}
+
+.panel-icon-slate {
+  background: var(--neutral-soft);
+  color: var(--muted);
+}
+
+.settings-panel-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.settings-panel-subtitle {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+}
+
+.settings-panel-body {
+  margin-top: 16px;
+  display: grid;
+  gap: 16px;
+}

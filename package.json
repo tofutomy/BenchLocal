@@ -26,9 +26,10 @@
     "release:doctor:mac": "node scripts/check-macos-release.mjs",
     "release:mac": "node scripts/build-macos-release.mjs",
     "typecheck": "npm run typecheck --workspace @benchlocal/core && npm run typecheck --workspace @benchlocal/sdk && npm run typecheck --workspace @benchlocal/web-sdk && npm run typecheck --workspace @benchlocal/benchpack-host && npm run typecheck --workspace app",
+    "typecheck:tests": "tsc -p app/test/tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "ci": "npm run typecheck && npm run test"
+    "ci": "npm run typecheck && npm run typecheck:tests && npm run test"
   }
 }
