@@ -16,7 +16,6 @@ import type {
   BenchLocalModelConfig,
   BenchLocalExecutionMode,
   BenchLocalProviderConfig,
-  BenchLocalProviderKind,
   BenchLocalWorkspaceTabModelSelection,
   BenchPackRunSummary,
   GenerationRequest,
@@ -30,7 +29,6 @@ import {
   loadOrCreateConfig
 } from "@core";
 import {
-  checkConfiguredModelAvailability,
   deleteConfiguredBenchPackVerifierImage,
   deleteRunHistoryForBenchPack,
   getConfiguredBenchPackVerifierStatus,
@@ -51,7 +49,13 @@ import {
 } from "@benchpack-host";
 import type { BenchLocalDiscoveredModel } from "@/shared/desktop-api";
 import { AgentEventBus } from "./services/agent-event-bus";
-import { ConfigService, redactConfig } from "./services/config-service";
+import { ConfigService } from "./services/config-service";
+import { ModelService } from "./services/model-service";
+import { ProviderService } from "./services/provider-service";
+import {
+  fallbackProviderDisplayName,
+  getProviderDisplayName
+} from "./services/provider-model-utils";
 import { WorkspaceService } from "./services/workspace-service";
 import { loadAppMetadata } from "./app-metadata";
 
@@ -91,299 +95,6 @@ type VerifierPreparationProgress = Extract<ProgressEvent, { type: "verifier_prep
 
 const RUN_RELEASE_TIMEOUT_MS = 5000;
 const VERIFIER_RELEASE_TIMEOUT_MS = 15000;
-const PROVIDER_KIND_LABELS: Record<BenchLocalProviderKind, string> = {
-  openrouter: "OpenRouter",
-  huggingface: "Hugging Face",
-  ollama: "Ollama",
-  llamacpp: "llama.cpp",
-  mlx: "MLX",
-  lmstudio: "LM Studio",
-  pico: "Pico",
-  openai_compatible: "OpenAI Compatible"
-};
-
-function defaultProviderName(kind: BenchLocalProviderKind): string {
-  return PROVIDER_KIND_LABELS[kind] ?? kind;
-}
-
-function fallbackProviderDisplayName(providerId: string): string {
-  const trimmed = providerId.trim();
-
-  if (/^openai[_-]compatible-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
-    return "OpenAI Compatible";
-  }
-
-  switch (trimmed) {
-    case "openrouter":
-      return "OpenRouter";
-    case "huggingface":
-      return "Hugging Face";
-    case "ollama":
-      return "Ollama";
-    case "llamacpp":
-      return "llama.cpp";
-    case "mlx":
-      return "MLX";
-    case "lmstudio":
-      return "LM Studio";
-    case "pico":
-      return "Pico";
-    default:
-      return trimmed || "Unknown Provider";
-  }
-}
-
-function getProviderDisplayName(providers: Record<string, BenchLocalProviderConfig>, providerId: string): string {
-  return providers[providerId]?.name?.trim() || fallbackProviderDisplayName(providerId);
-}
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function normalizeRequiredString(value: unknown, field: string): string {
-  const normalized = normalizeOptionalString(value);
-
-  if (!normalized) {
-    throw new Error(`${field} is required.`);
-  }
-
-  return normalized;
-}
-
-function normalizeOptionalBoolean(value: unknown, fallback: boolean, field: string): boolean {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  if (typeof value !== "boolean") {
-    throw new Error(`${field} must be a boolean.`);
-  }
-
-  return value;
-}
-
-function createCopyLabel(label: string, existingLabels: string[]): string {
-  const base = `${label.trim() || "Untitled"} Copy`;
-  const existing = new Set(existingLabels.map((candidate) => candidate.trim()));
-
-  if (!existing.has(base)) {
-    return base;
-  }
-
-  for (let index = 2; index < 1000; index += 1) {
-    const candidate = `${base} ${index}`;
-
-    if (!existing.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  return `${base} ${randomUUID().slice(0, 8)}`;
-}
-
-function createUniqueProviderId(
-  kind: BenchLocalProviderKind,
-  providers: Record<string, BenchLocalProviderConfig>
-): string {
-  let id = "";
-
-  do {
-    id = `${kind}-${randomUUID()}`;
-  } while (providers[id]);
-
-  return id;
-}
-
-function createUniqueModelId(model: BenchLocalModelConfig, models: BenchLocalModelConfig[]): string {
-  const existing = new Set(models.map((candidate) => candidate.id));
-  const modelPart = model.model.trim() || model.id.split(":").slice(1).join(":").trim() || "model";
-  let id = "";
-
-  do {
-    id = `${model.provider}:${modelPart}:copy-${randomUUID()}`;
-  } while (existing.has(id));
-
-  return id;
-}
-
-function normalizeProviderConfig(
-  input: BenchLocalAgentCreateProviderRequest,
-  providers: Record<string, BenchLocalProviderConfig>
-): { providerId: string; provider: BenchLocalProviderConfig } {
-  const providerId = normalizeOptionalString(input.id) ?? createUniqueProviderId(input.kind, providers);
-  const provider: BenchLocalProviderConfig = {
-    kind: input.kind,
-    name: normalizeOptionalString(input.name) ?? defaultProviderName(input.kind),
-    enabled: normalizeOptionalBoolean(input.enabled, true, "enabled"),
-    base_url: normalizeRequiredString(input.base_url, "base_url")
-  };
-  const apiKey = normalizeOptionalString(input.api_key);
-  const apiKeyEnv = normalizeOptionalString(input.api_key_env);
-
-  if (apiKey) {
-    provider.api_key = apiKey;
-  }
-
-  if (apiKeyEnv) {
-    provider.api_key_env = apiKeyEnv;
-  }
-
-  return { providerId, provider };
-}
-
-function patchProviderConfig(
-  provider: BenchLocalProviderConfig,
-  input: BenchLocalAgentPatchProviderRequest
-): BenchLocalProviderConfig {
-  const next: BenchLocalProviderConfig = {
-    ...provider,
-    ...(input.kind !== undefined ? { kind: input.kind } : {}),
-    ...(input.name !== undefined ? { name: normalizeOptionalString(input.name) ?? defaultProviderName(input.kind ?? provider.kind) } : {}),
-    ...(input.enabled !== undefined ? { enabled: normalizeOptionalBoolean(input.enabled, provider.enabled, "enabled") } : {}),
-    ...(input.base_url !== undefined ? { base_url: normalizeRequiredString(input.base_url, "base_url") } : {})
-  };
-
-  if (input.api_key !== undefined) {
-    const apiKey = normalizeOptionalString(input.api_key);
-
-    if (apiKey) {
-      next.api_key = apiKey;
-    } else {
-      delete next.api_key;
-    }
-  }
-
-  if (input.api_key_env !== undefined) {
-    const apiKeyEnv = normalizeOptionalString(input.api_key_env);
-
-    if (apiKeyEnv) {
-      next.api_key_env = apiKeyEnv;
-    } else {
-      delete next.api_key_env;
-    }
-  }
-
-  return next;
-}
-
-function buildModelConfig(
-  input: BenchLocalAgentCreateModelRequest,
-  providers: Record<string, BenchLocalProviderConfig>
-): BenchLocalModelConfig {
-  const provider = normalizeRequiredString(input.provider, "provider");
-  const model = normalizeRequiredString(input.model, "model");
-  const providerLabel = getProviderDisplayName(providers, provider);
-
-  return {
-    id: normalizeOptionalString(input.id) ?? `${provider}:${model}`,
-    provider,
-    model,
-    label: normalizeOptionalString(input.label) ?? `${model} via ${providerLabel}`,
-    group: normalizeOptionalString(input.group) ?? "primary",
-    enabled: normalizeOptionalBoolean(input.enabled, true, "enabled")
-  };
-}
-
-function patchModelConfig(
-  model: BenchLocalModelConfig,
-  input: BenchLocalAgentPatchModelRequest,
-  providers: Record<string, BenchLocalProviderConfig>
-): BenchLocalModelConfig {
-  return buildModelConfig(
-    {
-      id: input.id ?? model.id,
-      provider: input.provider ?? model.provider,
-      model: input.model ?? model.model,
-      label: input.label ?? model.label,
-      group: input.group ?? model.group,
-      enabled: input.enabled ?? model.enabled
-    },
-    providers
-  );
-}
-
-function providerSupportsModelDiscovery(provider: BenchLocalProviderConfig): boolean {
-  return provider.kind === "openrouter" || provider.kind === "huggingface" || provider.kind === "openai_compatible";
-}
-
-function providerModelsUrl(baseUrl: string): string {
-  const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL("models", normalizedBaseUrl).toString();
-}
-
-function formatModelPricing(value: unknown): string | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-
-  const record = value as Record<string, unknown>;
-  const prompt = typeof record.prompt === "string" || typeof record.prompt === "number" ? String(record.prompt) : null;
-  const completion =
-    typeof record.completion === "string" || typeof record.completion === "number" ? String(record.completion) : null;
-
-  if (prompt && completion) {
-    return `In ${prompt} · Out ${completion}`;
-  }
-
-  if (prompt) {
-    return `Prompt ${prompt}`;
-  }
-
-  if (completion) {
-    return `Completion ${completion}`;
-  }
-
-  return undefined;
-}
-
-function mapDiscoveredModel(input: unknown): BenchLocalDiscoveredModel | null {
-  if (!input || typeof input !== "object") {
-    return null;
-  }
-
-  const record = input as Record<string, unknown>;
-  const id = typeof record.id === "string" ? record.id.trim() : "";
-
-  if (!id) {
-    return null;
-  }
-
-  const name = typeof record.name === "string" ? record.name.trim() : undefined;
-  const ownedBy = typeof record.owned_by === "string" ? record.owned_by.trim() : undefined;
-  const topProvider =
-    typeof record.top_provider === "object" && record.top_provider !== null
-      ? (record.top_provider as Record<string, unknown>)
-      : null;
-  const architecture =
-    typeof record.architecture === "object" && record.architecture !== null
-      ? (record.architecture as Record<string, unknown>)
-      : null;
-  const contextLength =
-    typeof record.context_length === "number"
-      ? record.context_length
-      : typeof topProvider?.context_length === "number"
-        ? (topProvider.context_length as number)
-        : undefined;
-  const modality =
-    Array.isArray(architecture?.modality)
-      ? architecture.modality.filter((value): value is string => typeof value === "string").join(", ")
-      : Array.isArray(record.input_modalities)
-        ? record.input_modalities.filter((value): value is string => typeof value === "string").join(", ")
-        : Array.isArray(record.output_modalities)
-          ? record.output_modalities.filter((value): value is string => typeof value === "string").join(", ")
-          : undefined;
-
-  return {
-    id,
-    name,
-    ownedBy,
-    contextLength,
-    pricing: formatModelPricing(record.pricing),
-    modality
-  };
-}
-
 function uniqueValues(values: string[]): string[] {
   return values.filter((value, index, all) => Boolean(value) && all.indexOf(value) === index);
 }
@@ -697,6 +408,8 @@ export class BenchLocalController {
   private readonly eventBus = new AgentEventBus();
   private readonly configService = new ConfigService(this.eventBus);
   private readonly workspaceService = new WorkspaceService(this.eventBus, this.configService);
+  private readonly providerService = new ProviderService(this.configService, this.workspaceService);
+  private readonly modelService = new ModelService(this.eventBus, this.configService, this.workspaceService);
   private readonly activeBenchPackRuns = new Map<
     string,
     {
@@ -746,259 +459,53 @@ export class BenchLocalController {
     return this.workspaceService.saveWorkspaceState(state);
   }
 
-  async listProviders() {
-    const safeConfig = await this.getSafeConfig();
-    return safeConfig.providers;
+  listProviders() {
+    return this.providerService.listProviders();
   }
 
-  async createProvider(input: BenchLocalAgentCreateProviderRequest) {
-    const { config } = await loadOrCreateConfig();
-    const nextConfig = structuredClone(config);
-    const { providerId, provider } = normalizeProviderConfig(input, nextConfig.providers);
-
-    if (nextConfig.providers[providerId]) {
-      throw new Error(`Provider "${getProviderDisplayName(nextConfig.providers, providerId)}" already exists.`);
-    }
-
-    nextConfig.providers[providerId] = provider;
-    const saved = await this.saveConfig(nextConfig);
-    const safeConfig = redactConfig(saved.config);
-
-    return {
-      providerId,
-      provider: safeConfig.providers[providerId],
-      config: safeConfig
-    };
+  createProvider(input: BenchLocalAgentCreateProviderRequest) {
+    return this.providerService.createProvider(input);
   }
 
-  async updateProvider(providerId: string, input: BenchLocalAgentPatchProviderRequest) {
-    const { config } = await loadOrCreateConfig();
-    const nextConfig = structuredClone(config);
-    const provider = nextConfig.providers[providerId];
-
-    if (!provider) {
-      throw new Error(`Provider "${fallbackProviderDisplayName(providerId)}" was not found.`);
-    }
-
-    nextConfig.providers[providerId] = patchProviderConfig(provider, input);
-    const saved = await this.saveConfig(nextConfig);
-    const safeConfig = redactConfig(saved.config);
-
-    return {
-      providerId,
-      provider: safeConfig.providers[providerId],
-      config: safeConfig
-    };
+  updateProvider(providerId: string, input: BenchLocalAgentPatchProviderRequest) {
+    return this.providerService.updateProvider(providerId, input);
   }
 
-  async deleteProvider(providerId: string) {
-    const { config } = await loadOrCreateConfig();
-
-    if (!config.providers[providerId]) {
-      throw new Error(`Provider "${fallbackProviderDisplayName(providerId)}" was not found.`);
-    }
-
-    const nextConfig = structuredClone(config);
-    const providerName = getProviderDisplayName(nextConfig.providers, providerId);
-    const removedModelIds = new Set(nextConfig.models.filter((model) => model.provider === providerId).map((model) => model.id));
-    delete nextConfig.providers[providerId];
-    nextConfig.models = nextConfig.models.filter((model) => model.provider !== providerId);
-    const saved = await this.saveConfig(nextConfig);
-
-    if (removedModelIds.size > 0) {
-      await this.workspaceService.removeModelSelections(removedModelIds);
-    }
-
-    return {
-      providerId,
-      providerName,
-      removedModelIds: Array.from(removedModelIds),
-      config: redactConfig(saved.config)
-    };
+  deleteProvider(providerId: string) {
+    return this.providerService.deleteProvider(providerId);
   }
 
-  async duplicateProvider(providerId: string) {
-    const { config } = await loadOrCreateConfig();
-    const provider = config.providers[providerId];
-
-    if (!provider) {
-      throw new Error(`Provider "${fallbackProviderDisplayName(providerId)}" was not found.`);
-    }
-
-    const nextConfig = structuredClone(config);
-    const nextProviderId = createUniqueProviderId(provider.kind, nextConfig.providers);
-    const nextProviderName = createCopyLabel(
-      getProviderDisplayName(nextConfig.providers, providerId),
-      Object.values(nextConfig.providers).map((candidate) => candidate.name)
-    );
-    nextConfig.providers[nextProviderId] = {
-      ...provider,
-      name: nextProviderName
-    };
-    const saved = await this.saveConfig(nextConfig);
-    const safeConfig = redactConfig(saved.config);
-
-    return {
-      providerId: nextProviderId,
-      provider: safeConfig.providers[nextProviderId],
-      config: safeConfig
-    };
+  duplicateProvider(providerId: string) {
+    return this.providerService.duplicateProvider(providerId);
   }
 
-  async discoverProviderModelsById(providerId: string): Promise<BenchLocalDiscoveredModel[]> {
-    const { config } = await loadOrCreateConfig();
-    const provider = config.providers[providerId];
-
-    if (!provider) {
-      throw new Error(`Provider "${fallbackProviderDisplayName(providerId)}" was not found.`);
-    }
-
-    return this.discoverProviderModels(provider);
+  discoverProviderModelsById(providerId: string): Promise<BenchLocalDiscoveredModel[]> {
+    return this.providerService.discoverProviderModelsById(providerId);
   }
 
-  async createModel(input: BenchLocalAgentCreateModelRequest) {
-    const { config } = await loadOrCreateConfig();
-    const nextConfig = structuredClone(config);
-    const model = buildModelConfig(input, nextConfig.providers);
-
-    if (!nextConfig.providers[model.provider]) {
-      throw new Error(`Model provider "${fallbackProviderDisplayName(model.provider)}" does not exist yet.`);
-    }
-
-    if (nextConfig.models.some((candidate) => candidate.id === model.id)) {
-      throw new Error(`Model "${model.id}" already exists.`);
-    }
-
-    nextConfig.models.push(model);
-    const saved = await this.saveConfig(nextConfig);
-
-    return {
-      modelId: model.id,
-      model,
-      config: redactConfig(saved.config)
-    };
+  createModel(input: BenchLocalAgentCreateModelRequest) {
+    return this.modelService.createModel(input);
   }
 
-  async updateModel(modelId: string, input: BenchLocalAgentPatchModelRequest) {
-    const { config } = await loadOrCreateConfig();
-    const nextConfig = structuredClone(config);
-    const index = nextConfig.models.findIndex((model) => model.id === modelId);
-
-    if (index < 0) {
-      throw new Error(`Model "${modelId}" was not found.`);
-    }
-
-    const model = patchModelConfig(nextConfig.models[index], input, nextConfig.providers);
-
-    if (!nextConfig.providers[model.provider]) {
-      throw new Error(`Model provider "${fallbackProviderDisplayName(model.provider)}" does not exist yet.`);
-    }
-
-    if (nextConfig.models.some((candidate, candidateIndex) => candidateIndex !== index && candidate.id === model.id)) {
-      throw new Error(`Model "${model.id}" already exists.`);
-    }
-
-    nextConfig.models[index] = model;
-    const saved = await this.saveConfig(nextConfig);
-
-    if (model.id !== modelId) {
-      await this.workspaceService.replaceModelSelectionId(modelId, model.id);
-    }
-
-    return {
-      modelId: model.id,
-      previousModelId: modelId,
-      model,
-      config: redactConfig(saved.config)
-    };
+  updateModel(modelId: string, input: BenchLocalAgentPatchModelRequest) {
+    return this.modelService.updateModel(modelId, input);
   }
 
-  async deleteModel(modelId: string) {
-    const { config } = await loadOrCreateConfig();
-    const nextConfig = structuredClone(config);
-    const index = nextConfig.models.findIndex((model) => model.id === modelId);
-
-    if (index < 0) {
-      throw new Error(`Model "${modelId}" was not found.`);
-    }
-
-    const [removedModel] = nextConfig.models.splice(index, 1);
-    const saved = await this.saveConfig(nextConfig);
-    await this.workspaceService.removeModelSelections(new Set([modelId]));
-
-    return {
-      modelId,
-      model: removedModel,
-      config: redactConfig(saved.config)
-    };
+  deleteModel(modelId: string) {
+    return this.modelService.deleteModel(modelId);
   }
 
-  async duplicateModel(modelId: string) {
-    const { config } = await loadOrCreateConfig();
-    const model = config.models.find((candidate) => candidate.id === modelId);
-
-    if (!model) {
-      throw new Error(`Model "${modelId}" was not found.`);
-    }
-
-    const nextConfig = structuredClone(config);
-    const nextModelLabel = createCopyLabel(
-      model.label || model.model || model.id,
-      nextConfig.models.map((candidate) => candidate.label)
-    );
-    const nextModel: BenchLocalModelConfig = {
-      ...model,
-      id: createUniqueModelId(model, nextConfig.models),
-      label: nextModelLabel
-    };
-    nextConfig.models.push(nextModel);
-    const saved = await this.saveConfig(nextConfig);
-
-    return {
-      modelId: nextModel.id,
-      model: nextModel,
-      config: redactConfig(saved.config)
-    };
+  duplicateModel(modelId: string) {
+    return this.modelService.duplicateModel(modelId);
   }
 
-  async discoverProviderModels(provider: BenchLocalProviderConfig): Promise<BenchLocalDiscoveredModel[]> {
-    if (!providerSupportsModelDiscovery(provider)) {
-      throw new Error(`${provider.name} does not support model browsing yet.`);
-    }
-
-    const headers = new Headers({
-      Accept: "application/json"
-    });
-    const apiKey = provider.api_key?.trim() || (provider.api_key_env ? process.env[provider.api_key_env]?.trim() : "");
-
-    if (apiKey) {
-      headers.set("Authorization", `Bearer ${apiKey}`);
-    }
-
-    const response = await fetch(providerModelsUrl(provider.base_url), {
-      method: "GET",
-      headers
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to load models from ${provider.name}: ${response.status} ${response.statusText}`.trim());
-    }
-
-    const payload = (await response.json()) as { data?: unknown[] } | unknown[];
-    const entries = Array.isArray(payload) ? payload : Array.isArray(payload.data) ? payload.data : [];
-
-    return entries
-      .map((entry) => mapDiscoveredModel(entry))
-      .filter((entry): entry is BenchLocalDiscoveredModel => Boolean(entry))
-      .sort((left, right) => (left.name ?? left.id).localeCompare(right.name ?? right.id));
+  discoverProviderModels(provider: BenchLocalProviderConfig): Promise<BenchLocalDiscoveredModel[]> {
+    return this.providerService.discoverProviderModels(provider);
   }
 
-  async checkModelAvailability(input: { config: BenchLocalConfig; modelIds?: string[] }) {
-    const availability = await checkConfiguredModelAvailability(input.config, { modelIds: input.modelIds });
-    this.emitAgentEvent("models.availability.updated", { availability });
-    return availability;
+  checkModelAvailability(input: { config: BenchLocalConfig; modelIds?: string[] }) {
+    return this.modelService.checkModelAvailability(input);
   }
-
   async listBenchPacks() {
     const { config } = await loadOrCreateConfig();
     return inspectConfiguredBenchPacks(config, await this.getRuntimeCompatibility());
