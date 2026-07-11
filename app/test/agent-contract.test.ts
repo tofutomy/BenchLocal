@@ -9,6 +9,7 @@ import {
   createReadOnlyAgentCapabilities,
   createWriteAgentCapabilities
 } from "../src/main/agent/capabilities";
+import { createAgentGuide } from "../src/main/agent/guide";
 import { createOpenApiDocument } from "../src/main/agent/openapi";
 
 import {
@@ -307,6 +308,16 @@ describe("Agent API contract", () => {
       "/mcp"
     ]));
   });
+  it("generates the extracted Agent guide with stable workflow instructions", () => {
+    const guide = createAgentGuide(43210);
+
+    expect(guide).toContain("Base URL: `http://127.0.0.1:43210`");
+    expect(guide).toContain("MCP URL: `http://127.0.0.1:43210/mcp`");
+    expect(guide).toContain("Authorization: Bearer <token>");
+    expect(guide).toContain("POST /v1/tabs/:tabId/runs/:runId/retry-provider-errors");
+    expect(guide).toContain("benchlocal_get_recent_events");
+  });
+
 
 });
 
