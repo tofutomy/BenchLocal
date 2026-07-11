@@ -9,6 +9,7 @@ import {
   createReadOnlyAgentCapabilities,
   createWriteAgentCapabilities
 } from "../src/main/agent/capabilities";
+import { createOpenApiDocument } from "../src/main/agent/openapi";
 
 import {
   executionModeSchema,
@@ -289,6 +290,22 @@ describe("Agent API contract", () => {
     });
     expect(modelSelectionSchema.safeParse({ modelId: "model-1", alias: "primary" }).success).toBe(true);
     expect(modelSelectionSchema.safeParse({ alias: "missing-id" }).success).toBe(false);
+  });
+
+  it("generates the extracted OpenAPI document with stable routing metadata", () => {
+    const document = createOpenApiDocument(43210);
+
+    expect(document.openapi).toBe("3.1.0");
+    expect(document.servers).toEqual([{ url: "http://127.0.0.1:43210" }]);
+    expect(document.components.securitySchemes.bearerAuth).toEqual({ type: "http", scheme: "bearer" });
+    expect(Object.keys(document.paths)).toEqual(expect.arrayContaining([
+      "/v1/health",
+      "/v1/openapi.json",
+      "/v1/providers/{providerId}",
+      "/v1/tabs/{tabId}/runs",
+      "/v1/tabs/{tabId}/runs/{runId}/retry-failed-results",
+      "/mcp"
+    ]));
   });
 
 });
