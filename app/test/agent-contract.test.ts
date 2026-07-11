@@ -13,7 +13,8 @@ import {
 import { createAgentGuide } from "../src/main/agent/guide";
 import {
   routeProviderModelWriteAgentHttp,
-  routeReadOnlyAgentHttp
+  routeReadOnlyAgentHttp,
+  routeWorkspaceRunWriteAgentHttp
 } from "../src/main/agent/http-router";
 import { createOpenApiDocument } from "../src/main/agent/openapi";
 
@@ -410,5 +411,58 @@ describe("Agent API contract", () => {
     )).rejects.toMatchObject({ statusCode: 400, message: "Unknown field: unexpected" });
   });
 
+
+  it("routes workspace, tab, and run writes without consuming unmatched bodies", async () => {
+    let bodyReads = 0;
+    const controller = {
+      createWorkspaceTab: async (workspaceId: string, input: unknown) => ({ workspaceId, input }),
+      loadWorkspaceState: async () => ({
+        state: {
+          tabs: {
+            tab1: {
+              benchPackId: "pack-1",
+              modelSelections: [{ modelId: "model-1" }],
+              executionMode: "serial",
+              runsPerTest: 1,
+              samplingOverrides: {}
+            }
+          }
+        }
+      }),
+      runBenchPack: async () => ({ runId: "run-new" }),
+      setTabLoadedRun: async () => undefined,
+      createRetryBatchPlan: async () => ({ cells: [], groups: [] })
+    } as unknown as BenchLocalController;
+    const writeCapabilities = createWriteAgentCapabilities(controller);
+    const readCapabilities = {
+      refreshModelAvailability: async (input: unknown) => ({ input })
+    } as unknown as ReadOnlyAgentCapabilities;
+    const readBody = async () => {
+      bodyReads += 1;
+      return {};
+    };
+
+    await expect(routeWorkspaceRunWriteAgentHttp(
+      "POST", ["workspaces", "workspace-1", "tabs"], readCapabilities, writeCapabilities, readBody
+    )).resolves.toMatchObject({ statusCode: 201 });
+    await expect(routeWorkspaceRunWriteAgentHttp(
+      "POST", ["tabs", "tab1", "runs"], readCapabilities, writeCapabilities, readBody
+    )).resolves.toMatchObject({ statusCode: 202, payload: { accepted: true } });
+    await expect(routeWorkspaceRunWriteAgentHttp(
+      "POST", ["tabs", "tab1", "runs", "run-1", "retry-provider-errors"], readCapabilities, writeCapabilities, readBody
+    )).resolves.toMatchObject({ statusCode: 200, payload: { accepted: false } });
+    await expect(routeWorkspaceRunWriteAgentHttp(
+      "POST", ["unknown"], readCapabilities, writeCapabilities, readBody
+    )).resolves.toBeNull();
+    expect(bodyReads).toBe(3);
+
+    await expect(routeWorkspaceRunWriteAgentHttp(
+      "POST",
+      ["workspaces", "workspace-1", "tabs"],
+      readCapabilities,
+      writeCapabilities,
+      async () => ({ unexpected: true })
+    )).rejects.toMatchObject({ statusCode: 400, message: "Unknown field: unexpected" });
+  });
 });
 

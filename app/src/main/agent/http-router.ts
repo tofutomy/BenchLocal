@@ -1,8 +1,19 @@
 import type {
+  BenchLocalAgentCreateTabRequest,
   BenchLocalAgentCreateModelRequest,
   BenchLocalAgentCreateProviderRequest,
+  BenchLocalAgentExecutionModeRequest,
   BenchLocalAgentPatchModelRequest,
-  BenchLocalAgentPatchProviderRequest
+  BenchLocalAgentPatchProviderRequest,
+  BenchLocalAgentPatchTabRequest,
+  BenchLocalAgentResumeRunRequest,
+  BenchLocalAgentRetryBatchRequest,
+  BenchLocalAgentRetryScenarioRequest,
+  BenchLocalAgentRunRequest,
+  BenchLocalAgentRunsPerTestRequest,
+  BenchLocalAgentSamplingRequest,
+  BenchLocalAgentSelectBenchPackRequest,
+  BenchLocalAgentSelectModelsRequest
 } from "@core";
 import {
   WRITE_CAPABILITY_DEFINITIONS,
@@ -152,5 +163,110 @@ export async function routeProviderModelWriteAgentHttp(
     };
   }
 
+  return null;
+}
+
+// 工作区、页签和运行命令共享同一套能力注册表，避免 server 重复维护路由状态码。
+export async function routeWorkspaceRunWriteAgentHttp(
+  method: string | undefined,
+  segments: string[],
+  readCapabilities: ReadOnlyAgentCapabilities,
+  writeCapabilities: WriteAgentCapabilities,
+  readBody: ReadBody
+): Promise<AgentHttpRouteResult | null> {
+  if (method === "POST" && segments.join("/") === "models/availability/refresh") {
+    const body = await readBody();
+    assertOnlyKeys(body, ["modelIds"]);
+    return { statusCode: 200, payload: await readCapabilities.refreshModelAvailability(body as { modelIds?: unknown }) };
+  }
+  if (method === "POST" && segments.length === 3 && segments[0] === "workspaces" && segments[2] === "tabs") {
+    const body = await readBody();
+    assertOnlyKeys(body, ["benchPackId", "title", "modelSelections"]);
+    return {
+      statusCode: WRITE_CAPABILITY_DEFINITIONS.createTab.http.successStatus,
+      payload: await writeCapabilities.createTab(segments[1], body as BenchLocalAgentCreateTabRequest)
+    };
+  }
+  if (segments[0] !== "tabs" || segments.length < 2) return null;
+  const tabId = segments[1];
+
+  if (method === "PATCH" && segments.length === 2) {
+    const body = await readBody();
+    assertOnlyKeys(body, ["title", "focusedScenarioId", "modelSelections", "samplingOverrides", "executionMode", "runsPerTest"]);
+    return {
+      statusCode: WRITE_CAPABILITY_DEFINITIONS.patchTab.http.successStatus,
+      payload: await writeCapabilities.patchTab(tabId, body as BenchLocalAgentPatchTabRequest)
+    };
+  }
+
+  const tabCommands = {
+    "select-benchpack": ["selectBenchPack", ["benchPackId", "title"]],
+    "select-models": ["selectModels", ["modelIds", "selections"]],
+    sampling: ["setSampling", ["samplingOverrides"]],
+    "execution-mode": ["setExecutionMode", ["executionMode", "runsPerTest"]],
+    "runs-per-test": ["setRunsPerTest", ["runsPerTest"]]
+  } as const;
+  if (method === "POST" && segments.length === 3 && segments[2] in tabCommands) {
+    const command = tabCommands[segments[2] as keyof typeof tabCommands];
+    const body = await readBody();
+    assertOnlyKeys(body, [...command[1]]);
+    const handlers = {
+      selectBenchPack: () => writeCapabilities.selectBenchPack(tabId, body as BenchLocalAgentSelectBenchPackRequest),
+      selectModels: () => writeCapabilities.selectModels(tabId, body as BenchLocalAgentSelectModelsRequest),
+      setSampling: () => writeCapabilities.setSampling(tabId, body as BenchLocalAgentSamplingRequest),
+      setExecutionMode: () => writeCapabilities.setExecutionMode(tabId, body as BenchLocalAgentExecutionModeRequest),
+      setRunsPerTest: () => writeCapabilities.setRunsPerTest(tabId, body as BenchLocalAgentRunsPerTestRequest)
+    };
+    return {
+      statusCode: WRITE_CAPABILITY_DEFINITIONS[command[0]].http.successStatus,
+      payload: await handlers[command[0]]()
+    };
+  }
+  if (method === "POST" && segments.length === 5 && segments.slice(2).join("/") === "models/availability/refresh") {
+    const body = await readBody();
+    assertOnlyKeys(body, ["modelIds"]);
+    return { statusCode: 200, payload: await readCapabilities.refreshModelAvailability({ tabId, ...(body as { modelIds?: unknown }) }) };
+  }
+  if (method === "POST" && segments.length === 3 && segments[2] === "runs") {
+    const body = await readBody();
+    assertOnlyKeys(body, ["benchPackId", "modelIds", "executionMode", "runsPerTest", "generation"]);
+    return {
+      statusCode: WRITE_CAPABILITY_DEFINITIONS.startRun.http.successStatus,
+      payload: await writeCapabilities.startRun(tabId, body as BenchLocalAgentRunRequest)
+    };
+  }
+  if (method === "POST" && segments.length === 4 && segments[2] === "runs" && segments[3] === "stop") {
+    return { statusCode: WRITE_CAPABILITY_DEFINITIONS.stopRun.http.successStatus, payload: await writeCapabilities.stopRun(tabId) };
+  }
+  if (method !== "POST" || segments.length !== 5 || segments[2] !== "runs") return null;
+
+  const runId = segments[3];
+  const action = segments[4];
+  if (action === "resume") {
+    const body = await readBody();
+    assertOnlyKeys(body, ["executionMode", "runsPerTest", "generation"]);
+    return {
+      statusCode: WRITE_CAPABILITY_DEFINITIONS.resumeRun.http.successStatus,
+      payload: await writeCapabilities.resumeRun(tabId, runId, body as BenchLocalAgentResumeRunRequest)
+    };
+  }
+  if (action === "retry-scenario") {
+    const body = await readBody();
+    assertOnlyKeys(body, ["scenarioId", "modelId", "runsPerTest", "generation"]);
+    return {
+      statusCode: WRITE_CAPABILITY_DEFINITIONS.retryScenario.http.successStatus,
+      payload: await writeCapabilities.retryScenario(tabId, runId, body as BenchLocalAgentRetryScenarioRequest)
+    };
+  }
+  if (action === "retry-provider-errors" || action === "retry-failed-results") {
+    const body = await readBody();
+    assertOnlyKeys(body, ["runsPerTest", "generation"]);
+    const capabilityKey = action === "retry-provider-errors" ? "retryProviderErrors" : "retryFailedResults";
+    const result = await writeCapabilities[capabilityKey](tabId, runId, body as BenchLocalAgentRetryBatchRequest);
+    return {
+      statusCode: result.accepted ? WRITE_CAPABILITY_DEFINITIONS[capabilityKey].http.successStatus : 200,
+      payload: result
+    };
+  }
   return null;
 }

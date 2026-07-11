@@ -5,18 +5,7 @@ import path from "node:path";
 import type {
   BenchLocalAgentAccess,
   BenchLocalAgentAccessState,
-  BenchLocalAgentEvent,
-  BenchLocalAgentCreateTabRequest,
-  BenchLocalAgentExecutionModeRequest,
-  BenchLocalAgentPatchTabRequest,
-  BenchLocalAgentRetryBatchRequest,
-  BenchLocalAgentRetryScenarioRequest,
-  BenchLocalAgentRunRequest,
-  BenchLocalAgentRunsPerTestRequest,
-  BenchLocalAgentSamplingRequest,
-  BenchLocalAgentSelectBenchPackRequest,
-  BenchLocalAgentSelectModelsRequest,
-  BenchLocalAgentResumeRunRequest
+  BenchLocalAgentEvent
 } from "@core";
 import { getBenchLocalHome, loadOrCreateConfig } from "@core";
 import { benchLocalController, type BenchLocalController } from "./controller";
@@ -32,7 +21,8 @@ import { createAgentGuide } from "./agent/guide";
 import {
   AgentHttpError,
   routeProviderModelWriteAgentHttp,
-  routeReadOnlyAgentHttp
+  routeReadOnlyAgentHttp,
+  routeWorkspaceRunWriteAgentHttp
 } from "./agent/http-router";
 import { createOpenApiDocument } from "./agent/openapi";
 type AgentSession = {
@@ -53,23 +43,6 @@ const MAX_RECENT_AGENT_EVENTS = 500;
 
 function createToken(): string {
   return randomBytes(32).toString("base64url");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function assertOnlyKeys(value: unknown, allowedKeys: string[]): asserts value is Record<string, unknown> {
-  if (!isRecord(value)) {
-    throw new HttpError(400, "Expected a JSON object.");
-  }
-
-  const allowed = new Set(allowedKeys);
-  const unknownKeys = Object.keys(value).filter((key) => !allowed.has(key));
-
-  if (unknownKeys.length > 0) {
-    throw new HttpError(400, `Unknown field${unknownKeys.length === 1 ? "" : "s"}: ${unknownKeys.join(", ")}`);
-  }
 }
 
 function normalizePort(value: unknown): number | undefined {
@@ -507,156 +480,21 @@ class BenchLocalAgentServer {
   }
 
   private async routeV1(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
-    const capabilities = this.createReadOnlyCapabilities();
+    const readCapabilities = this.createReadOnlyCapabilities();
     const writeCapabilities = this.createWriteCapabilities();
-    const readRoute = await routeReadOnlyAgentHttp(request.method, segments, capabilities);
-    if (readRoute) {
-      sendJson(response, readRoute.statusCode, readRoute.payload);
-      return;
-    }
-    const writeRoute = await routeProviderModelWriteAgentHttp(
-      request.method,
-      segments,
-      writeCapabilities,
-      () => readJsonRequest(request)
-    );
-    if (writeRoute) {
-      sendJson(response, writeRoute.statusCode, writeRoute.payload);
-      return;
-    }
-
-
-
-
-
-
-    if (request.method === "POST" && segments.length === 3 && segments[0] === "models" && segments[1] === "availability" && segments[2] === "refresh") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["modelIds"]);
-      sendJson(response, 200, await capabilities.refreshModelAvailability(body as { modelIds?: unknown }));
-      return;
-    }
-
-
-    if (segments[0] === "workspaces" && segments.length === 3 && segments[2] === "tabs" && request.method === "POST") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["benchPackId", "title", "modelSelections"]);
-      sendJson(response, 201, await writeCapabilities.createTab(segments[1], body as BenchLocalAgentCreateTabRequest));
-      return;
-    }
-
-    if (segments[0] === "tabs" && segments.length >= 2) {
-      await this.routeTabCommand(request, response, segments);
-      return;
-    }
-
-    throw new HttpError(404, "Unknown endpoint.");
+    const route = await routeReadOnlyAgentHttp(request.method, segments, readCapabilities)
+      ?? await routeProviderModelWriteAgentHttp(
+        request.method,
+        segments,
+        writeCapabilities,
+        () => readJsonRequest(request)
+      )
+      ?? await routeWorkspaceRunWriteAgentHttp(
+        request.method, segments, readCapabilities, writeCapabilities, () => readJsonRequest(request)
+      );
+    if (!route) throw new HttpError(404, "Unknown endpoint.");
+    sendJson(response, route.statusCode, route.payload);
   }
-
-  private async routeTabCommand(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
-    const writeCapabilities = this.createWriteCapabilities();
-    const tabId = segments[1];
-
-    if (request.method === "PATCH" && segments.length === 2) {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["title", "focusedScenarioId", "modelSelections", "samplingOverrides", "executionMode", "runsPerTest"]);
-      sendJson(response, 200, await writeCapabilities.patchTab(tabId, body as BenchLocalAgentPatchTabRequest));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 3 && segments[2] === "select-benchpack") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["benchPackId", "title"]);
-      const input = body as BenchLocalAgentSelectBenchPackRequest;
-      sendJson(response, 200, await writeCapabilities.selectBenchPack(tabId, input));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 3 && segments[2] === "select-models") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["modelIds", "selections"]);
-      sendJson(response, 200, await writeCapabilities.selectModels(tabId, body as BenchLocalAgentSelectModelsRequest));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 5 && segments[2] === "models" && segments[3] === "availability" && segments[4] === "refresh") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["modelIds"]);
-      sendJson(response, 200, await this.createReadOnlyCapabilities().refreshModelAvailability({ tabId, ...(body as { modelIds?: unknown }) }));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 3 && segments[2] === "sampling") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["samplingOverrides"]);
-      const input = body as BenchLocalAgentSamplingRequest;
-      sendJson(response, 200, await writeCapabilities.setSampling(tabId, input));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 3 && segments[2] === "execution-mode") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["executionMode", "runsPerTest"]);
-      const input = body as BenchLocalAgentExecutionModeRequest;
-      sendJson(response, 200, await writeCapabilities.setExecutionMode(tabId, input));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 3 && segments[2] === "runs-per-test") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["runsPerTest"]);
-      const input = body as BenchLocalAgentRunsPerTestRequest;
-      sendJson(response, 200, await writeCapabilities.setRunsPerTest(tabId, input));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 3 && segments[2] === "runs") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["benchPackId", "modelIds", "executionMode", "runsPerTest", "generation"]);
-      sendJson(response, 202, await writeCapabilities.startRun(tabId, body as BenchLocalAgentRunRequest));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 4 && segments[2] === "runs" && segments[3] === "stop") {
-      sendJson(response, 200, await writeCapabilities.stopRun(tabId));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 5 && segments[2] === "runs" && segments[4] === "resume") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["executionMode", "runsPerTest", "generation"]);
-      sendJson(response, 202, await writeCapabilities.resumeRun(tabId, segments[3], body as BenchLocalAgentResumeRunRequest));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 5 && segments[2] === "runs" && segments[4] === "retry-scenario") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["scenarioId", "modelId", "runsPerTest", "generation"]);
-      sendJson(response, 202, await writeCapabilities.retryScenario(tabId, segments[3], body as BenchLocalAgentRetryScenarioRequest));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 5 && segments[2] === "runs" && segments[4] === "retry-provider-errors") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["runsPerTest", "generation"]);
-      const result = await writeCapabilities.retryProviderErrors(tabId, segments[3], body as BenchLocalAgentRetryBatchRequest);
-      sendJson(response, result.accepted ? 202 : 200, result);
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 5 && segments[2] === "runs" && segments[4] === "retry-failed-results") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["runsPerTest", "generation"]);
-      const result = await writeCapabilities.retryFailedResults(tabId, segments[3], body as BenchLocalAgentRetryBatchRequest);
-      sendJson(response, result.accepted ? 202 : 200, result);
-      return;
-    }
-
-    throw new HttpError(404, "Unknown endpoint.");
-  }
-
-
-
 }
 
 export const agentServer = new BenchLocalAgentServer(benchLocalController);
