@@ -10,23 +10,12 @@ import type {
   BenchLocalAgentPatchProviderRequest,
   BenchLocalAgentSafeConfig,
   BenchLocalConfig,
-  BenchLocalModelConfig,
   BenchLocalExecutionMode,
   BenchLocalProviderConfig,
   BenchLocalWorkspaceTabModelSelection,
   BenchPackRunSummary,
   GenerationRequest,
-  ProgressEvent,
-  ScenarioMeta,
 } from "@core";
-import { loadOrCreateConfig } from "@core";
-import {
-  inspectConfiguredBenchPacks,
-  loadRunSummaryForBenchPack,
-  resumeBenchPackRun,
-  retryScenarioForBenchPackRun,
-  runConfiguredBenchPack,
-} from "@benchpack-host";
 import type { BenchLocalDiscoveredModel } from "@/shared/desktop-api";
 import { AgentEventBus } from "./services/agent-event-bus";
 import { ConfigService } from "./services/config-service";
@@ -42,6 +31,15 @@ import {
 } from "./services/verifier-service";
 import { ModelService } from "./services/model-service";
 import { ProviderService } from "./services/provider-service";
+import {
+  RunService,
+  type ProgressCallback,
+  type ResumeRunInput,
+  type RetryBatchKind,
+  type RetryBatchPlan,
+  type RetryScenarioInput,
+  type RunBenchPackInput
+} from "./services/run-service";
 import { WorkspaceService } from "./services/workspace-service";
 import {
   WebPackService,
@@ -49,123 +47,8 @@ import {
   type WriteWebPackArtifactInput
 } from "./services/webpack-service";
 import { loadAppMetadata } from "./app-metadata";
-
 export type { BenchLocalControllerEventName } from "./services/agent-event-bus";
 
-
-type ProgressCallback = (event: ProgressEvent) => void;
-
-type RetryBatchKind = "provider_errors" | "failed_results";
-
-type RetryScenarioCell = {
-  modelId: string;
-  scenarioId: string;
-};
-
-type RetryBatchPlan = {
-  tabId: string;
-  benchPackId: string;
-  runId: string;
-  kind: RetryBatchKind;
-  executionMode: BenchLocalExecutionMode;
-  cells: RetryScenarioCell[];
-  groups: RetryScenarioCell[][];
-};
-
-
-
-const RUN_RELEASE_TIMEOUT_MS = 5000;
-function uniqueValues(values: string[]): string[] {
-  return values.filter((value, index, all) => Boolean(value) && all.indexOf(value) === index);
-}
-
-function getRunModelOrder(summary: BenchPackRunSummary): string[] {
-  const runStarted = summary.events.find(
-    (event): event is Extract<ProgressEvent, { type: "run_started" }> => event.type === "run_started"
-  );
-
-  return uniqueValues([
-    ...(runStarted?.models.map((model) => model.id) ?? []),
-    ...Object.keys(summary.resultsByModel)
-  ]);
-}
-
-function getRunScenarioOrder(summary: BenchPackRunSummary, scenarios: ScenarioMeta[]): string[] {
-  return uniqueValues([
-    ...scenarios.map((scenario) => scenario.id),
-    ...Object.values(summary.resultsByModel).flatMap((results) => results.map((result) => result.scenarioId))
-  ]);
-}
-
-function collectRetryCells(summary: BenchPackRunSummary, kind: RetryBatchKind): RetryScenarioCell[] {
-  const cells: RetryScenarioCell[] = [];
-
-  for (const [modelId, results] of Object.entries(summary.resultsByModel)) {
-    for (const result of results) {
-      if (result.status !== "fail") {
-        continue;
-      }
-
-      const isProviderError = result.errorType === "provider_error";
-
-      if (kind === "provider_errors" && !isProviderError) {
-        continue;
-      }
-
-      if (kind === "failed_results" && isProviderError) {
-        continue;
-      }
-
-      cells.push({
-        modelId,
-        scenarioId: result.scenarioId
-      });
-    }
-  }
-
-  return cells;
-}
-
-function groupRetryCellsForExecutionMode(
-  cells: RetryScenarioCell[],
-  executionMode: BenchLocalExecutionMode,
-  scenarioOrder: string[],
-  modelOrder: string[]
-): RetryScenarioCell[][] {
-  const cellSet = new Set(cells.map((cell) => `${cell.modelId}::${cell.scenarioId}`));
-  const cellFor = (modelId: string, scenarioId: string): RetryScenarioCell | null =>
-    cellSet.has(`${modelId}::${scenarioId}`) ? { modelId, scenarioId } : null;
-  const singletonByScenarioThenModel = scenarioOrder.flatMap((scenarioId) =>
-    modelOrder.flatMap((modelId) => {
-      const cell = cellFor(modelId, scenarioId);
-      return cell ? [[cell]] : [];
-    })
-  );
-
-  switch (executionMode) {
-    case "serial":
-      return singletonByScenarioThenModel;
-    case "serial_by_model":
-      return modelOrder.flatMap((modelId) =>
-        scenarioOrder.flatMap((scenarioId) => {
-          const cell = cellFor(modelId, scenarioId);
-          return cell ? [[cell]] : [];
-        })
-      );
-    case "parallel_by_test_case":
-      return scenarioOrder
-        .map((scenarioId) => modelOrder.flatMap((modelId) => cellFor(modelId, scenarioId) ?? []))
-        .filter((group) => group.length > 0);
-    case "parallel_by_model":
-      return modelOrder
-        .map((modelId) => scenarioOrder.flatMap((scenarioId) => cellFor(modelId, scenarioId) ?? []))
-        .filter((group) => group.length > 0);
-    case "full_parallel":
-      return [singletonByScenarioThenModel.flat()].filter((group) => group.length > 0);
-    default:
-      return singletonByScenarioThenModel;
-  }
-}
 
 export class BenchLocalController {
   private readonly eventBus = new AgentEventBus();
@@ -177,13 +60,7 @@ export class BenchLocalController {
   private readonly historyService = new HistoryService(this.configService);
   private readonly webPackService = new WebPackService(this.configService, this.benchPackService, this.historyService);
   private readonly verifierService = new VerifierService(this.eventBus, this.configService, this.benchPackService);
-  private readonly activeBenchPackRuns = new Map<
-    string,
-    {
-      benchPackId: string;
-      controller: AbortController;
-    }
-  >();
+  private readonly runService = new RunService(this.eventBus, this.configService, this.benchPackService, this.historyService, () => this.getRuntimeCompatibility());
 
   onAgentEvent(listener: (event: BenchLocalAgentEvent) => void): () => void {
     return this.eventBus.onAgentEvent(listener);
@@ -290,11 +167,8 @@ export class BenchLocalController {
   uninstallBenchPack(benchPackId: string, onProgress?: (progress: BenchPackMutationProgress) => void) {
     return this.benchPackService.uninstallBenchPack(benchPackId, onProgress);
   }
-  async listActiveRuns() {
-    return Array.from(this.activeBenchPackRuns.entries()).map(([tabId, run]) => ({
-      tabId,
-      benchPackId: run.benchPackId
-    }));
+  listActiveRuns() {
+    return this.runService.listActiveRuns();
   }
 
   listRunHistory(benchPackId: string) {
@@ -354,257 +228,59 @@ export class BenchLocalController {
   deleteVerifierImage(benchPackId: string, verifierId: string) {
     return this.verifierService.deleteVerifierImage(benchPackId, verifierId);
   }
-  async runBenchPack(
-    input: {
-      tabId: string;
-      benchPackId: string;
-      modelIds?: string[];
-      executionMode?: BenchLocalExecutionMode;
-      runsPerTest?: number;
-      generation?: GenerationRequest;
-    },
-    onEvent?: ProgressCallback
-  ) {
-    await this.prepareRunSlot(input.tabId, input.benchPackId);
-    const { config } = await loadOrCreateConfig();
-    const activeRun = this.activeBenchPackRuns.get(input.tabId);
-
-    if (!activeRun) {
-      throw new Error("Benchmark run slot was not initialized.");
-    }
-
-    try {
-      const result = await runConfiguredBenchPack(
-        config,
-        input.benchPackId,
-        {
-          modelIds: input.modelIds,
-          executionMode: input.executionMode,
-          runsPerTest: input.runsPerTest,
-          generation: input.generation,
-          abortSignal: activeRun.controller.signal,
-          onEvent: (progressEvent) => {
-            this.emitRunEvent(input.tabId, input.benchPackId, progressEvent);
-            onEvent?.(progressEvent);
-          }
-        },
-        await this.getRuntimeCompatibility()
-      );
-      this.emitAgentEvent("benchpack.run.finished", {
-        tabId: input.tabId,
-        benchPackId: input.benchPackId,
-        runId: result.runId,
-        cancelled: result.cancelled === true
-      });
-      return result;
-    } catch (error) {
-      this.emitAgentEvent("benchpack.run.error", {
-        tabId: input.tabId,
-        benchPackId: input.benchPackId,
-        message: error instanceof Error ? error.message : String(error)
-      });
-      throw error;
-    } finally {
-      this.activeBenchPackRuns.delete(input.tabId);
-    }
+  runBenchPack(input: RunBenchPackInput, onEvent?: ProgressCallback) {
+    return this.runService.runBenchPack(input, onEvent);
   }
 
-  async retryScenario(
-    input: {
-      tabId: string;
-      benchPackId: string;
-      runId: string;
-      scenarioId: string;
-      modelId: string;
-      runsPerTest?: number;
-      generation?: GenerationRequest;
-    },
-    onEvent?: ProgressCallback
-  ) {
-    const { config } = await loadOrCreateConfig();
-
-    return retryScenarioForBenchPackRun(
-      config,
-      input.benchPackId,
-      {
-        runId: input.runId,
-        scenarioId: input.scenarioId,
-        modelId: input.modelId,
-        runsPerTest: input.runsPerTest,
-        generation: input.generation,
-        onEvent: (progressEvent) => {
-          this.emitRunEvent(input.tabId, input.benchPackId, progressEvent);
-          onEvent?.(progressEvent);
-        }
-      },
-      await this.getRuntimeCompatibility()
-    );
+  retryScenario(input: RetryScenarioInput, onEvent?: ProgressCallback) {
+    return this.runService.retryScenario(input, onEvent);
   }
 
-  async createRetryBatchPlan(input: {
+  createRetryBatchPlan(input: {
     tabId: string;
     benchPackId: string;
     runId: string;
     kind: RetryBatchKind;
     executionMode: BenchLocalExecutionMode;
   }): Promise<RetryBatchPlan> {
-    const { config } = await loadOrCreateConfig();
-    const summary = await loadRunSummaryForBenchPack(config, input.benchPackId, input.runId);
-    const inspections = await inspectConfiguredBenchPacks(config, await this.getRuntimeCompatibility());
-    const inspection = inspections.find((candidate) => candidate.id === input.benchPackId);
-    const scenarioOrder = getRunScenarioOrder(summary, inspection?.scenarios ?? []);
-    const modelOrder = getRunModelOrder(summary);
-    const cells = collectRetryCells(summary, input.kind);
-
-    return {
-      ...input,
-      cells,
-      groups: groupRetryCellsForExecutionMode(cells, input.executionMode, scenarioOrder, modelOrder)
-    };
+    return this.runService.createRetryBatchPlan(input);
   }
 
-  async executeRetryBatch(
+  executeRetryBatch(
     plan: RetryBatchPlan,
-    input: {
-      runsPerTest?: number;
-      generation?: GenerationRequest;
-    },
+    input: { runsPerTest?: number; generation?: GenerationRequest },
     onEvent?: ProgressCallback
   ) {
-    const failures: Array<{ modelId: string; scenarioId: string; message: string }> = [];
-
-    for (const group of plan.groups) {
-      await Promise.all(
-        group.map(async (cell) => {
-          try {
-            await this.retryScenario(
-              {
-                tabId: plan.tabId,
-                benchPackId: plan.benchPackId,
-                runId: plan.runId,
-                scenarioId: cell.scenarioId,
-                modelId: cell.modelId,
-                runsPerTest: input.runsPerTest,
-                generation: input.generation
-              },
-              onEvent
-            );
-          } catch (error) {
-            failures.push({
-              ...cell,
-              message: error instanceof Error ? error.message : String(error)
-            });
-          }
-        })
-      );
-    }
-
-    const { config } = await loadOrCreateConfig();
-
-    return {
-      run: await loadRunSummaryForBenchPack(config, plan.benchPackId, plan.runId),
-      attempted: plan.cells.length,
-      failed: failures.length,
-      failures
-    };
+    return this.runService.executeRetryBatch(plan, input, onEvent);
   }
 
-  async resumeRun(
-    input: {
-      tabId: string;
-      benchPackId: string;
-      runId: string;
-      executionMode?: BenchLocalExecutionMode;
-      runsPerTest?: number;
-      generation?: GenerationRequest;
-    },
-    onEvent?: ProgressCallback
-  ) {
-    await this.prepareRunSlot(input.tabId, input.benchPackId);
-    const { config } = await loadOrCreateConfig();
-    const activeRun = this.activeBenchPackRuns.get(input.tabId);
-
-    if (!activeRun) {
-      throw new Error("Benchmark run slot was not initialized.");
-    }
-
-    try {
-      const result = await resumeBenchPackRun(
-        config,
-        input.benchPackId,
-        {
-          runId: input.runId,
-          executionMode: input.executionMode,
-          runsPerTest: input.runsPerTest,
-          generation: input.generation,
-          abortSignal: activeRun.controller.signal,
-          onEvent: (progressEvent) => {
-            this.emitRunEvent(input.tabId, input.benchPackId, progressEvent);
-            onEvent?.(progressEvent);
-          }
-        },
-        await this.getRuntimeCompatibility()
-      );
-      this.emitAgentEvent("benchpack.run.finished", {
-        tabId: input.tabId,
-        benchPackId: input.benchPackId,
-        runId: result.runId,
-        cancelled: result.cancelled === true
-      });
-      return result;
-    } catch (error) {
-      this.emitAgentEvent("benchpack.run.error", {
-        tabId: input.tabId,
-        benchPackId: input.benchPackId,
-        runId: input.runId,
-        message: error instanceof Error ? error.message : String(error)
-      });
-      throw error;
-    } finally {
-      this.activeBenchPackRuns.delete(input.tabId);
-    }
+  resumeRun(input: ResumeRunInput, onEvent?: ProgressCallback) {
+    return this.runService.resumeRun(input, onEvent);
   }
 
-  async stopRun(tabId: string) {
-    const activeRun = this.activeBenchPackRuns.get(tabId);
-
-    if (!activeRun) {
-      return { stopped: false };
-    }
-
-    activeRun.controller.abort(new Error("Run cancelled by user."));
-    return { stopped: true };
+  stopRun(tabId: string) {
+    return this.runService.stopRun(tabId);
   }
 
   async stopActiveBenchPackRunsForShutdown(
-    options?: {
-      timeoutMs?: number;
-      intervalMs?: number;
-    }
+    options?: { timeoutMs?: number; intervalMs?: number }
   ): Promise<void> {
-    if (this.activeBenchPackRuns.size === 0 && !this.verifierService.hasActiveStarts()) {
-      return;
-    }
+    if (!this.runService.hasActiveRuns() && !this.verifierService.hasActiveStarts()) return;
 
-    for (const activeRun of this.activeBenchPackRuns.values()) {
-      activeRun.controller.abort(new Error("Run cancelled because BenchLocal is shutting down."));
-    }
-
+    this.runService.cancelActiveRunsForShutdown();
     this.verifierService.cancelActiveStartsForShutdown();
 
     const timeoutMs = options?.timeoutMs ?? 15000;
     const intervalMs = options?.intervalMs ?? 50;
     const deadline = Date.now() + timeoutMs;
 
-    while (this.activeBenchPackRuns.size > 0 || this.verifierService.hasActiveStarts()) {
+    while (this.runService.hasActiveRuns() || this.verifierService.hasActiveStarts()) {
       if (Date.now() >= deadline) {
         throw new Error("Timed out while waiting for active Bench Pack work to stop.");
       }
-
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
   }
-
   createWorkspaceTab(
     workspaceId: string,
     input: {
@@ -647,53 +323,6 @@ export class BenchLocalController {
 
   getSafeConfig(): Promise<BenchLocalAgentSafeConfig> {
     return this.configService.getSafeConfig();
-  }
-
-  private async prepareRunSlot(tabId: string, benchPackId: string) {
-    const existingActiveRun = this.activeBenchPackRuns.get(tabId);
-
-    if (existingActiveRun) {
-      if (existingActiveRun.controller.signal.aborted) {
-        await this.waitForBenchPackRunRelease(tabId);
-      } else {
-        throw new Error("A benchmark run is already active for this tab.");
-      }
-    }
-
-    const controller = new AbortController();
-    this.activeBenchPackRuns.set(tabId, {
-      benchPackId,
-      controller
-    });
-  }
-
-  private async waitForBenchPackRunRelease(tabId: string) {
-    const deadline = Date.now() + RUN_RELEASE_TIMEOUT_MS;
-
-    while (this.activeBenchPackRuns.has(tabId)) {
-      if (Date.now() >= deadline) {
-        throw new Error("The previous benchmark run is still shutting down. Please wait a moment and try again.");
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-  }
-
-
-  private emitRunEvent(tabId: string, benchPackId: string, event: ProgressEvent) {
-    this.emitAgentEvent("benchpack.run.event", {
-      tabId,
-      benchPackId,
-      event
-    });
-
-    if (event.type === "run_started") {
-      this.emitAgentEvent("benchpack.run.started", {
-        tabId,
-        benchPackId,
-        runId: event.runId
-      });
-    }
   }
 
 }
