@@ -20,7 +20,6 @@ import type {
   BenchLocalAgentSelectModelsRequest,
   BenchLocalAgentResumeRunRequest,
   BenchLocalExecutionMode,
-  BenchLocalWorkspaceTab,
   GenerationRequest
 } from "@core";
 import { loadOrCreateConfig } from "@core";
@@ -31,8 +30,6 @@ import {
   createReadOnlyAgentCapabilities,
   createWriteAgentCapabilities
 } from "./agent/capabilities";
-
-type RetryBatchKind = "provider_errors" | "failed_results";
 
 type BenchLocalMcpOptions = {
   getAgentGuide: () => string;
@@ -118,112 +115,12 @@ function textResource(uri: string, mimeType: string, text: string) {
   };
 }
 
-function normalizeString(value: unknown, field: string): string {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${field} is required.`);
-  }
-
-  return value.trim();
-}
-
-async function loadRequiredTab(controller: BenchLocalController, tabId: string): Promise<{ tab: BenchLocalWorkspaceTab }> {
-  const { state } = await controller.loadWorkspaceState();
-  const tab = state.tabs[tabId];
-
-  if (!tab) {
-    throw new Error(`Tab "${tabId}" was not found.`);
-  }
-
-  return { tab };
-}
-
-async function retryScenario(
-  controller: BenchLocalController,
-  tabId: string,
-  runId: string,
-  request: BenchLocalAgentRetryScenarioRequest
-): Promise<void> {
-  const { tab } = await loadRequiredTab(controller, tabId);
-  const benchPackId = tab.benchPackId;
-
-  if (!benchPackId) {
-    throw new Error(`Tab "${tabId}" does not have a Bench Pack selected.`);
-  }
-
-  const scenarioId = normalizeString(request.scenarioId, "scenarioId");
-  const modelId = normalizeString(request.modelId, "modelId");
-
-  void controller.retryScenario({
-    tabId,
-    benchPackId,
-    runId,
-    scenarioId,
-    modelId,
-    runsPerTest: request.runsPerTest,
-    generation: request.generation
-  }).then(async (summary) => {
-    await controller.setTabLoadedRun(tabId, summary.runId);
-  }).catch((error) => {
-    console.error("[benchlocal] mcp-started retry failed", error);
-  });
-}
-
-async function retryBatch(
-  controller: BenchLocalController,
-  tabId: string,
-  runId: string,
-  kind: RetryBatchKind,
-  request: BenchLocalAgentRetryBatchRequest
-): Promise<{ accepted: boolean; tabId: string; runId: string; kind: RetryBatchKind; cellCount: number; groupCount: number }> {
-  const { tab } = await loadRequiredTab(controller, tabId);
-
-  if (!tab.benchPackId) {
-    throw new Error(`Tab "${tabId}" does not have a Bench Pack selected.`);
-  }
-
-  const plan = await controller.createRetryBatchPlan({
-    tabId,
-    benchPackId: tab.benchPackId,
-    runId,
-    kind,
-    executionMode: tab.executionMode
-  });
-
-  if (plan.cells.length === 0) {
-    return {
-      accepted: false,
-      tabId,
-      runId,
-      kind,
-      cellCount: 0,
-      groupCount: 0
-    };
-  }
-
-  void controller.executeRetryBatch(plan, {
-    runsPerTest: request.runsPerTest ?? tab.runsPerTest,
-    generation: request.generation ?? tab.samplingOverrides
-  }).then(async (result) => {
-    await controller.setTabLoadedRun(tabId, result.run.runId);
-  }).catch((error) => {
-    console.error("[benchlocal] mcp-started retry batch failed", error);
-  });
-
-  return {
-    accepted: true,
-    tabId,
-    runId,
-    kind,
-    cellCount: plan.cells.length,
-    groupCount: plan.groups.length
-  };
-}
-
 function createBenchLocalMcpServer(controller: BenchLocalController, options: BenchLocalMcpOptions): McpServer {
   const capabilities = createReadOnlyAgentCapabilities(controller, options.getRecentEvents);
   const writeCapabilities = createWriteAgentCapabilities(controller, {
     onBackgroundError: (operation, error) => {
-      console.error(`[benchlocal] mcp-started ${operation} failed`, error);
+      const label = operation === "retryBatch" ? "retry batch" : operation;
+      console.error(`[benchlocal] mcp-started ${label} failed`, error);
     }
   });
   const server = new McpServer({
@@ -798,7 +695,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_retry_scenario",
+    WRITE_CAPABILITY_DEFINITIONS.retryScenario.mcp.tool,
     {
       title: "Retry Scenario",
       description: "Retry one scenario/model cell from a saved run.",
@@ -812,14 +709,11 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, openWorldHint: true }
     },
-    async ({ tabId, runId, ...request }) => {
-      await retryScenario(controller, tabId, runId, request as BenchLocalAgentRetryScenarioRequest);
-      return jsonToolResult({ accepted: true, tabId, runId });
-    }
+    async ({ tabId, runId, ...request }) => jsonToolResult(await writeCapabilities.retryScenario(tabId, runId, request as BenchLocalAgentRetryScenarioRequest))
   );
 
   server.registerTool(
-    "benchlocal_retry_provider_errors",
+    WRITE_CAPABILITY_DEFINITIONS.retryProviderErrors.mcp.tool,
     {
       title: "Retry Provider Errors",
       description: "Retry provider-error cells from a saved run.",
@@ -832,12 +726,12 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       annotations: { readOnlyHint: false, openWorldHint: true }
     },
     async ({ tabId, runId, ...request }) => jsonToolResult(
-      await retryBatch(controller, tabId, runId, "provider_errors", request as BenchLocalAgentRetryBatchRequest)
+      await writeCapabilities.retryProviderErrors(tabId, runId, request as BenchLocalAgentRetryBatchRequest)
     )
   );
 
   server.registerTool(
-    "benchlocal_retry_failed_results",
+    WRITE_CAPABILITY_DEFINITIONS.retryFailedResults.mcp.tool,
     {
       title: "Retry Failed Results",
       description: "Retry non-provider failed cells from a saved run.",
@@ -850,7 +744,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       annotations: { readOnlyHint: false, openWorldHint: true }
     },
     async ({ tabId, runId, ...request }) => jsonToolResult(
-      await retryBatch(controller, tabId, runId, "failed_results", request as BenchLocalAgentRetryBatchRequest)
+      await writeCapabilities.retryFailedResults(tabId, runId, request as BenchLocalAgentRetryBatchRequest)
     )
   );
 

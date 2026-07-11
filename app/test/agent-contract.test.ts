@@ -212,5 +212,62 @@ describe("Agent API contract", () => {
     await Promise.resolve();
     expect(loadedRuns).toEqual(["run-new", "run-resumed"]);
   });
+  it("preserves scenario and batch retry outcomes", async () => {
+    const retryInputs: unknown[] = [];
+    const loadedRuns: string[] = [];
+    const controller = {
+      loadWorkspaceState: async () => ({
+        state: {
+          tabs: {
+            tab1: {
+              benchPackId: "pack-1",
+              executionMode: "serial",
+              runsPerTest: 2,
+              samplingOverrides: { temperature: 0.4 }
+            }
+          }
+        }
+      }),
+      retryScenario: async (input: unknown) => {
+        retryInputs.push(input);
+        return { runId: "retry-scenario" };
+      },
+      createRetryBatchPlan: async (input: { runId: string }) => ({
+        ...input,
+        cells: input.runId === "empty" ? [] : [{ id: "cell-1" }],
+        groups: input.runId === "empty" ? [] : [{ id: "group-1" }]
+      }),
+      executeRetryBatch: async (plan: unknown, options: unknown) => {
+        retryInputs.push({ plan, options });
+        return { run: { runId: "retry-batch" } };
+      },
+      setTabLoadedRun: async (_tabId: string, runId: string) => loadedRuns.push(runId)
+    } as unknown as BenchLocalController;
+    const capabilities = createWriteAgentCapabilities(controller);
+
+    await expect(capabilities.retryScenario("tab1", "run-1", {
+      scenarioId: " scenario-1 ",
+      modelId: " model-1 "
+    })).resolves.toEqual({ accepted: true, tabId: "tab1", runId: "run-1" });
+    await expect(capabilities.retryProviderErrors("tab1", "empty", {})).resolves.toEqual({
+      accepted: false,
+      tabId: "tab1",
+      runId: "empty",
+      kind: "provider_errors",
+      cellCount: 0,
+      groupCount: 0
+    });
+    await expect(capabilities.retryFailedResults("tab1", "run-2", { runsPerTest: 5 })).resolves.toMatchObject({
+      accepted: true,
+      kind: "failed_results",
+      cellCount: 1,
+      groupCount: 1
+    });
+    expect(retryInputs[0]).toMatchObject({ scenarioId: "scenario-1", modelId: "model-1" });
+    expect(retryInputs[1]).toMatchObject({ options: { runsPerTest: 5, generation: { temperature: 0.4 } } });
+    await Promise.resolve();
+    expect(loadedRuns).toEqual(["retry-scenario", "retry-batch"]);
+  });
+
 });
 

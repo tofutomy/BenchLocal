@@ -20,8 +20,7 @@ import type {
   BenchLocalAgentSamplingRequest,
   BenchLocalAgentSelectBenchPackRequest,
   BenchLocalAgentSelectModelsRequest,
-  BenchLocalAgentResumeRunRequest,
-  BenchLocalWorkspaceTab
+  BenchLocalAgentResumeRunRequest
 } from "@core";
 import { getBenchLocalHome, loadOrCreateConfig } from "@core";
 import { benchLocalController, type BenchLocalController } from "./controller";
@@ -43,8 +42,6 @@ type ConfigureAgentAccessInput = {
   access?: BenchLocalAgentAccess;
   port?: number;
 };
-
-type RetryBatchKind = "provider_errors" | "failed_results";
 
 const DEFAULT_AGENT_ACCESS = "localhost" as const;
 const AGENT_SESSION_PATH = path.join(getBenchLocalHome(), "agent-session.json");
@@ -118,14 +115,6 @@ function isAllowedLocalOrigin(value: string | undefined): boolean {
   } catch {
     return false;
   }
-}
-
-function normalizeString(value: unknown, field: string): string {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new HttpError(400, `${field} is required.`);
-  }
-
-  return value.trim();
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
@@ -944,7 +933,8 @@ Refresh selected models:
   private createWriteCapabilities() {
     return createWriteAgentCapabilities(this.controller, {
       onBackgroundError: (operation, error) => {
-        console.error(`[benchlocal] agent-started ${operation} failed`, error);
+        const label = operation === "retryBatch" ? "retry batch" : operation;
+        console.error(`[benchlocal] agent-started ${label} failed`, error);
       }
     });
   }
@@ -1210,15 +1200,14 @@ Refresh selected models:
     if (request.method === "POST" && segments.length === 5 && segments[2] === "runs" && segments[4] === "retry-scenario") {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["scenarioId", "modelId", "runsPerTest", "generation"]);
-      await this.retryScenario(tabId, segments[3], body as BenchLocalAgentRetryScenarioRequest);
-      sendJson(response, 202, { accepted: true, tabId, runId: segments[3] });
+      sendJson(response, 202, await writeCapabilities.retryScenario(tabId, segments[3], body as BenchLocalAgentRetryScenarioRequest));
       return;
     }
 
     if (request.method === "POST" && segments.length === 5 && segments[2] === "runs" && segments[4] === "retry-provider-errors") {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["runsPerTest", "generation"]);
-      const result = await this.retryBatch(tabId, segments[3], "provider_errors", body as BenchLocalAgentRetryBatchRequest);
+      const result = await writeCapabilities.retryProviderErrors(tabId, segments[3], body as BenchLocalAgentRetryBatchRequest);
       sendJson(response, result.accepted ? 202 : 200, result);
       return;
     }
@@ -1226,7 +1215,7 @@ Refresh selected models:
     if (request.method === "POST" && segments.length === 5 && segments[2] === "runs" && segments[4] === "retry-failed-results") {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["runsPerTest", "generation"]);
-      const result = await this.retryBatch(tabId, segments[3], "failed_results", body as BenchLocalAgentRetryBatchRequest);
+      const result = await writeCapabilities.retryFailedResults(tabId, segments[3], body as BenchLocalAgentRetryBatchRequest);
       sendJson(response, result.accepted ? 202 : 200, result);
       return;
     }
@@ -1236,92 +1225,6 @@ Refresh selected models:
 
 
 
-  private async retryScenario(tabId: string, runId: string, request: BenchLocalAgentRetryScenarioRequest): Promise<void> {
-    const { tab } = await this.loadRequiredTab(tabId);
-    const benchPackId = tab.benchPackId;
-
-    if (!benchPackId) {
-      throw new HttpError(400, `Tab "${tabId}" does not have a Bench Pack selected.`);
-    }
-
-    const scenarioId = normalizeString(request.scenarioId, "scenarioId");
-    const modelId = normalizeString(request.modelId, "modelId");
-
-    void this.controller.retryScenario({
-      tabId,
-      benchPackId,
-      runId,
-      scenarioId,
-      modelId,
-      runsPerTest: request.runsPerTest,
-      generation: request.generation
-    }).then(async (summary) => {
-      await this.controller.setTabLoadedRun(tabId, summary.runId);
-    }).catch((error) => {
-      console.error("[benchlocal] agent-started retry failed", error);
-    });
-  }
-
-  private async retryBatch(
-    tabId: string,
-    runId: string,
-    kind: RetryBatchKind,
-    request: BenchLocalAgentRetryBatchRequest
-  ): Promise<{ accepted: boolean; tabId: string; runId: string; kind: RetryBatchKind; cellCount: number; groupCount: number }> {
-    const { tab } = await this.loadRequiredTab(tabId);
-
-    if (!tab.benchPackId) {
-      throw new HttpError(400, `Tab "${tabId}" does not have a Bench Pack selected.`);
-    }
-
-    const plan = await this.controller.createRetryBatchPlan({
-      tabId,
-      benchPackId: tab.benchPackId,
-      runId,
-      kind,
-      executionMode: tab.executionMode
-    });
-
-    if (plan.cells.length === 0) {
-      return {
-        accepted: false,
-        tabId,
-        runId,
-        kind,
-        cellCount: 0,
-        groupCount: 0
-      };
-    }
-
-    void this.controller.executeRetryBatch(plan, {
-      runsPerTest: request.runsPerTest ?? tab.runsPerTest,
-      generation: request.generation ?? tab.samplingOverrides
-    }).then(async (result) => {
-      await this.controller.setTabLoadedRun(tabId, result.run.runId);
-    }).catch((error) => {
-      console.error("[benchlocal] agent-started retry batch failed", error);
-    });
-
-    return {
-      accepted: true,
-      tabId,
-      runId,
-      kind,
-      cellCount: plan.cells.length,
-      groupCount: plan.groups.length
-    };
-  }
-
-  private async loadRequiredTab(tabId: string): Promise<{ tab: BenchLocalWorkspaceTab }> {
-    const { state } = await this.controller.loadWorkspaceState();
-    const tab = state.tabs[tabId];
-
-    if (!tab) {
-      throw new HttpError(404, `Tab "${tabId}" was not found.`);
-    }
-
-    return { tab };
-  }
 }
 
 export const agentServer = new BenchLocalAgentServer(benchLocalController);

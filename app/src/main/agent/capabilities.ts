@@ -12,7 +12,9 @@ import type {
   BenchLocalAgentSelectBenchPackRequest,
   BenchLocalAgentSelectModelsRequest,
   BenchLocalAgentRunRequest,
-  BenchLocalAgentResumeRunRequest
+  BenchLocalAgentResumeRunRequest,
+  BenchLocalAgentRetryScenarioRequest,
+  BenchLocalAgentRetryBatchRequest
 } from "@core";
 import type { BenchLocalController } from "../controller";
 
@@ -286,6 +288,21 @@ export const WRITE_CAPABILITY_DEFINITIONS = {
     id: "runs.stop",
     http: { method: "POST", path: "/v1/tabs/{tabId}/runs/stop", successStatus: 200 },
     mcp: { tool: "benchlocal_stop_run" }
+  },
+  retryScenario: {
+    id: "runs.retry.scenario",
+    http: { method: "POST", path: "/v1/tabs/{tabId}/runs/{runId}/retry-scenario", successStatus: 202 },
+    mcp: { tool: "benchlocal_retry_scenario" }
+  },
+  retryProviderErrors: {
+    id: "runs.retry.provider-errors",
+    http: { method: "POST", path: "/v1/tabs/{tabId}/runs/{runId}/retry-provider-errors", successStatus: 202 },
+    mcp: { tool: "benchlocal_retry_provider_errors" }
+  },
+  retryFailedResults: {
+    id: "runs.retry.failed-results",
+    http: { method: "POST", path: "/v1/tabs/{tabId}/runs/{runId}/retry-failed-results", successStatus: 202 },
+    mcp: { tool: "benchlocal_retry_failed_results" }
   }
 } as const;
 
@@ -293,7 +310,7 @@ export type WriteCapabilityKey = keyof typeof WRITE_CAPABILITY_DEFINITIONS;
 
 export function createWriteAgentCapabilities(
   controller: BenchLocalController,
-  options?: { onBackgroundError?: (operation: "start" | "resume", error: unknown) => void }
+  options?: { onBackgroundError?: (operation: "start" | "resume" | "retry" | "retryBatch", error: unknown) => void }
 ) {
   // 写 handler 只编排领域调用，HTTP 状态码与 MCP 注解继续由各自适配层负责。
   const resolveTabRun = async (
@@ -340,6 +357,80 @@ export function createWriteAgentCapabilities(
     return { accepted: true, tabId, runId };
   };
 
+  const loadRetryTab = async (tabId: string) => {
+    const { state } = await controller.loadWorkspaceState();
+    const tab = state.tabs[tabId];
+    if (!tab) {
+      throw new CapabilityNotFoundError(`Tab "${tabId}" was not found.`);
+    }
+    if (!tab.benchPackId) {
+      throw new CapabilityValidationError(`Tab "${tabId}" does not have a Bench Pack selected.`);
+    }
+    return { ...tab, benchPackId: tab.benchPackId };
+  };
+
+  const retryScenario = async (tabId: string, runId: string, request: BenchLocalAgentRetryScenarioRequest) => {
+    const tab = await loadRetryTab(tabId);
+    const normalizeRequired = (value: unknown, field: string) => {
+      if (typeof value !== "string" || !value.trim()) {
+        throw new CapabilityValidationError(`${field} is required.`);
+      }
+      return value.trim();
+    };
+    const scenarioId = normalizeRequired(request.scenarioId, "scenarioId");
+    const modelId = normalizeRequired(request.modelId, "modelId");
+
+    void controller.retryScenario({
+      tabId,
+      benchPackId: tab.benchPackId,
+      runId,
+      scenarioId,
+      modelId,
+      runsPerTest: request.runsPerTest,
+      generation: request.generation
+    }).then(async (summary) => {
+      await controller.setTabLoadedRun(tabId, summary.runId);
+    }).catch((error) => options?.onBackgroundError?.("retry", error));
+
+    return { accepted: true, tabId, runId };
+  };
+
+  const retryBatch = async (
+    tabId: string,
+    runId: string,
+    kind: "provider_errors" | "failed_results",
+    request: BenchLocalAgentRetryBatchRequest
+  ) => {
+    const tab = await loadRetryTab(tabId);
+    const plan = await controller.createRetryBatchPlan({
+      tabId,
+      benchPackId: tab.benchPackId,
+      runId,
+      kind,
+      executionMode: tab.executionMode
+    });
+
+    if (plan.cells.length === 0) {
+      return { accepted: false, tabId, runId, kind, cellCount: 0, groupCount: 0 };
+    }
+
+    void controller.executeRetryBatch(plan, {
+      runsPerTest: request.runsPerTest ?? tab.runsPerTest,
+      generation: request.generation ?? tab.samplingOverrides
+    }).then(async (result) => {
+      await controller.setTabLoadedRun(tabId, result.run.runId);
+    }).catch((error) => options?.onBackgroundError?.("retryBatch", error));
+
+    return {
+      accepted: true,
+      tabId,
+      runId,
+      kind,
+      cellCount: plan.cells.length,
+      groupCount: plan.groups.length
+    };
+  };
+
   return {
     createProvider: (input: BenchLocalAgentCreateProviderRequest) => controller.createProvider(input),
     updateProvider: (providerId: string, input: BenchLocalAgentPatchProviderRequest) => controller.updateProvider(providerId, input),
@@ -362,6 +453,11 @@ export function createWriteAgentCapabilities(
       controller.patchTab(tabId, input),
     startRun,
     resumeRun,
-    stopRun: (tabId: string) => controller.stopRun(tabId)
+    stopRun: (tabId: string) => controller.stopRun(tabId),
+    retryScenario,
+    retryProviderErrors: (tabId: string, runId: string, request: BenchLocalAgentRetryBatchRequest) =>
+      retryBatch(tabId, runId, "provider_errors", request),
+    retryFailedResults: (tabId: string, runId: string, request: BenchLocalAgentRetryBatchRequest) =>
+      retryBatch(tabId, runId, "failed_results", request)
   };
 }
