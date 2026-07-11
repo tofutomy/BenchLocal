@@ -685,7 +685,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_create_tab",
+    WRITE_CAPABILITY_DEFINITIONS.createTab.mcp.tool,
     {
       title: "Create Tab",
       description: "Create a workspace tab and optionally select a Bench Pack and models.",
@@ -697,11 +697,11 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, openWorldHint: false }
     },
-    async ({ workspaceId, ...input }) => jsonToolResult(await controller.createWorkspaceTab(workspaceId, input))
+    async ({ workspaceId, ...input }) => jsonToolResult(await writeCapabilities.createTab(workspaceId, input))
   );
 
   server.registerTool(
-    "benchlocal_patch_tab",
+    WRITE_CAPABILITY_DEFINITIONS.patchTab.mcp.tool,
     {
       title: "Patch Tab",
       description: "Patch tab title, focused scenario, selected models, sampling, execution mode, or runs per test.",
@@ -716,11 +716,11 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, openWorldHint: false }
     },
-    async ({ tabId, ...patch }) => jsonToolResult(await controller.patchTab(tabId, patch as BenchLocalAgentPatchTabRequest))
+    async ({ tabId, ...patch }) => jsonToolResult(await writeCapabilities.patchTab(tabId, patch as BenchLocalAgentPatchTabRequest))
   );
 
   server.registerTool(
-    "benchlocal_select_benchpack",
+    WRITE_CAPABILITY_DEFINITIONS.selectBenchPack.mcp.tool,
     {
       title: "Select Bench Pack",
       description: "Select a Bench Pack for a tab.",
@@ -733,12 +733,12 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
     },
     async ({ tabId, ...input }) => {
       const request = input as BenchLocalAgentSelectBenchPackRequest;
-      return jsonToolResult(await controller.selectTabBenchPack(tabId, request.benchPackId, request.title));
+      return jsonToolResult(await writeCapabilities.selectBenchPack(tabId, request));
     }
   );
 
   server.registerTool(
-    "benchlocal_select_models",
+    WRITE_CAPABILITY_DEFINITIONS.selectModels.mcp.tool,
     {
       title: "Select Models",
       description: "Select models for a tab.",
@@ -749,11 +749,11 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, openWorldHint: false }
     },
-    async ({ tabId, ...input }) => jsonToolResult(await controller.selectTabModels(tabId, input as BenchLocalAgentSelectModelsRequest))
+    async ({ tabId, ...input }) => jsonToolResult(await writeCapabilities.selectModels(tabId, input as BenchLocalAgentSelectModelsRequest))
   );
 
   server.registerTool(
-    "benchlocal_set_sampling",
+    WRITE_CAPABILITY_DEFINITIONS.setSampling.mcp.tool,
     {
       title: "Set Sampling",
       description: "Set tab sampling overrides.",
@@ -767,12 +767,12 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       const request: BenchLocalAgentSamplingRequest = {
         samplingOverrides: samplingOverrides as GenerationRequest
       };
-      return jsonToolResult(await controller.patchTab(tabId, { samplingOverrides: request.samplingOverrides }));
+      return jsonToolResult(await writeCapabilities.setSampling(tabId, request));
     }
   );
 
   server.registerTool(
-    "benchlocal_set_execution_mode",
+    WRITE_CAPABILITY_DEFINITIONS.setExecutionMode.mcp.tool,
     {
       title: "Set Execution Mode",
       description: "Set tab execution mode and optionally runs per test.",
@@ -788,12 +788,12 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
         executionMode: executionMode as BenchLocalExecutionMode,
         runsPerTest
       };
-      return jsonToolResult(await controller.patchTab(tabId, request));
+      return jsonToolResult(await writeCapabilities.setExecutionMode(tabId, request));
     }
   );
 
   server.registerTool(
-    "benchlocal_set_runs_per_test",
+    WRITE_CAPABILITY_DEFINITIONS.setRunsPerTest.mcp.tool,
     {
       title: "Set Runs Per Test",
       description: "Set tab runs-per-test count.",
@@ -805,7 +805,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
     },
     async ({ tabId, runsPerTest }) => {
       const request: BenchLocalAgentRunsPerTestRequest = { runsPerTest };
-      return jsonToolResult(await controller.patchTab(tabId, request));
+      return jsonToolResult(await writeCapabilities.setRunsPerTest(tabId, request));
     }
   );
 

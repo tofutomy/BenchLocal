@@ -1,9 +1,16 @@
 import type {
   BenchLocalAgentCreateModelRequest,
   BenchLocalAgentCreateProviderRequest,
+  BenchLocalAgentCreateTabRequest,
   BenchLocalAgentEvent,
   BenchLocalAgentPatchModelRequest,
-  BenchLocalAgentPatchProviderRequest
+  BenchLocalAgentPatchProviderRequest,
+  BenchLocalAgentPatchTabRequest,
+  BenchLocalAgentSamplingRequest,
+  BenchLocalAgentExecutionModeRequest,
+  BenchLocalAgentRunsPerTestRequest,
+  BenchLocalAgentSelectBenchPackRequest,
+  BenchLocalAgentSelectModelsRequest
 } from "@core";
 import type { BenchLocalController } from "../controller";
 
@@ -219,6 +226,41 @@ export const WRITE_CAPABILITY_DEFINITIONS = {
     id: "models.duplicate",
     http: { method: "POST", path: "/v1/models/{modelId}/duplicate", successStatus: 201 },
     mcp: { tool: "benchlocal_duplicate_model" }
+  },
+  createTab: {
+    id: "tabs.create",
+    http: { method: "POST", path: "/v1/workspaces/{workspaceId}/tabs", successStatus: 201 },
+    mcp: { tool: "benchlocal_create_tab" }
+  },
+  patchTab: {
+    id: "tabs.update",
+    http: { method: "PATCH", path: "/v1/tabs/{tabId}", successStatus: 200 },
+    mcp: { tool: "benchlocal_patch_tab" }
+  },
+  selectBenchPack: {
+    id: "tabs.benchpack.select",
+    http: { method: "POST", path: "/v1/tabs/{tabId}/select-benchpack", successStatus: 200 },
+    mcp: { tool: "benchlocal_select_benchpack" }
+  },
+  selectModels: {
+    id: "tabs.models.select",
+    http: { method: "POST", path: "/v1/tabs/{tabId}/select-models", successStatus: 200 },
+    mcp: { tool: "benchlocal_select_models" }
+  },
+  setSampling: {
+    id: "tabs.sampling.set",
+    http: { method: "POST", path: "/v1/tabs/{tabId}/sampling", successStatus: 200 },
+    mcp: { tool: "benchlocal_set_sampling" }
+  },
+  setExecutionMode: {
+    id: "tabs.execution-mode.set",
+    http: { method: "POST", path: "/v1/tabs/{tabId}/execution-mode", successStatus: 200 },
+    mcp: { tool: "benchlocal_set_execution_mode" }
+  },
+  setRunsPerTest: {
+    id: "tabs.runs-per-test.set",
+    http: { method: "POST", path: "/v1/tabs/{tabId}/runs-per-test", successStatus: 200 },
+    mcp: { tool: "benchlocal_set_runs_per_test" }
   }
 } as const;
 
@@ -234,6 +276,17 @@ export function createWriteAgentCapabilities(controller: BenchLocalController) {
     createModel: (input: BenchLocalAgentCreateModelRequest) => controller.createModel(input),
     updateModel: (modelId: string, input: BenchLocalAgentPatchModelRequest) => controller.updateModel(modelId, input),
     deleteModel: (modelId: string) => controller.deleteModel(modelId),
-    duplicateModel: (modelId: string) => controller.duplicateModel(modelId)
+    duplicateModel: (modelId: string) => controller.duplicateModel(modelId),
+    createTab: (workspaceId: string, input: BenchLocalAgentCreateTabRequest) => controller.createWorkspaceTab(workspaceId, input),
+    patchTab: (tabId: string, input: BenchLocalAgentPatchTabRequest) => controller.patchTab(tabId, input),
+    selectBenchPack: (tabId: string, input: BenchLocalAgentSelectBenchPackRequest) =>
+      controller.selectTabBenchPack(tabId, input.benchPackId, input.title),
+    selectModels: (tabId: string, input: BenchLocalAgentSelectModelsRequest) => controller.selectTabModels(tabId, input),
+    setSampling: (tabId: string, input: BenchLocalAgentSamplingRequest) =>
+      controller.patchTab(tabId, { samplingOverrides: input.samplingOverrides }),
+    setExecutionMode: (tabId: string, input: BenchLocalAgentExecutionModeRequest) =>
+      controller.patchTab(tabId, input),
+    setRunsPerTest: (tabId: string, input: BenchLocalAgentRunsPerTestRequest) =>
+      controller.patchTab(tabId, input)
   };
 }

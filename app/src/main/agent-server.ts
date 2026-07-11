@@ -1032,7 +1032,7 @@ Refresh selected models:
     if (segments[0] === "workspaces" && segments.length === 3 && segments[2] === "tabs" && request.method === "POST") {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["benchPackId", "title", "modelSelections"]);
-      sendJson(response, 201, await this.controller.createWorkspaceTab(segments[1], body as BenchLocalAgentCreateTabRequest));
+      sendJson(response, 201, await writeCapabilities.createTab(segments[1], body as BenchLocalAgentCreateTabRequest));
       return;
     }
 
@@ -1127,12 +1127,13 @@ Refresh selected models:
   }
 
   private async routeTabCommand(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
+    const writeCapabilities = this.createWriteCapabilities();
     const tabId = segments[1];
 
     if (request.method === "PATCH" && segments.length === 2) {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["title", "focusedScenarioId", "modelSelections", "samplingOverrides", "executionMode", "runsPerTest"]);
-      sendJson(response, 200, await this.controller.patchTab(tabId, body as BenchLocalAgentPatchTabRequest));
+      sendJson(response, 200, await writeCapabilities.patchTab(tabId, body as BenchLocalAgentPatchTabRequest));
       return;
     }
 
@@ -1140,14 +1141,14 @@ Refresh selected models:
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["benchPackId", "title"]);
       const input = body as BenchLocalAgentSelectBenchPackRequest;
-      sendJson(response, 200, await this.controller.selectTabBenchPack(tabId, input.benchPackId, input.title));
+      sendJson(response, 200, await writeCapabilities.selectBenchPack(tabId, input));
       return;
     }
 
     if (request.method === "POST" && segments.length === 3 && segments[2] === "select-models") {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["modelIds", "selections"]);
-      sendJson(response, 200, await this.controller.selectTabModels(tabId, body as BenchLocalAgentSelectModelsRequest));
+      sendJson(response, 200, await writeCapabilities.selectModels(tabId, body as BenchLocalAgentSelectModelsRequest));
       return;
     }
 
@@ -1162,7 +1163,7 @@ Refresh selected models:
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["samplingOverrides"]);
       const input = body as BenchLocalAgentSamplingRequest;
-      sendJson(response, 200, await this.controller.patchTab(tabId, { samplingOverrides: input.samplingOverrides }));
+      sendJson(response, 200, await writeCapabilities.setSampling(tabId, input));
       return;
     }
 
@@ -1170,10 +1171,7 @@ Refresh selected models:
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["executionMode", "runsPerTest"]);
       const input = body as BenchLocalAgentExecutionModeRequest;
-      sendJson(response, 200, await this.controller.patchTab(tabId, {
-        executionMode: input.executionMode,
-        runsPerTest: input.runsPerTest
-      }));
+      sendJson(response, 200, await writeCapabilities.setExecutionMode(tabId, input));
       return;
     }
 
@@ -1181,7 +1179,7 @@ Refresh selected models:
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["runsPerTest"]);
       const input = body as BenchLocalAgentRunsPerTestRequest;
-      sendJson(response, 200, await this.controller.patchTab(tabId, { runsPerTest: input.runsPerTest }));
+      sendJson(response, 200, await writeCapabilities.setRunsPerTest(tabId, input));
       return;
     }
 

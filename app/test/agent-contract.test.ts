@@ -136,5 +136,33 @@ describe("Agent API contract", () => {
     await capabilities.duplicateModel("model-1");
     expect(calls).toEqual(["createProvider", "updateProvider", "deleteModel", "duplicateModel"]);
   });
+
+  it("delegates tab writes and keeps specialized patch payloads stable", async () => {
+    const calls: unknown[] = [];
+    const controller = {
+      createWorkspaceTab: async (workspaceId: string, input: unknown) => calls.push(["createTab", workspaceId, input]),
+      patchTab: async (tabId: string, input: unknown) => calls.push(["patchTab", tabId, input]),
+      selectTabBenchPack: async (tabId: string, benchPackId: string | null, title?: string) =>
+        calls.push(["selectBenchPack", tabId, benchPackId, title]),
+      selectTabModels: async (tabId: string, input: unknown) => calls.push(["selectModels", tabId, input])
+    } as unknown as BenchLocalController;
+    const capabilities = createWriteAgentCapabilities(controller);
+
+    await capabilities.createTab("workspace-1", { title: "Tab" });
+    await capabilities.selectBenchPack("tab-1", { benchPackId: "pack-1", title: "Pack" });
+    await capabilities.selectModels("tab-1", { modelIds: ["model-1"] });
+    await capabilities.setSampling("tab-1", { samplingOverrides: { temperature: 0.2 } });
+    await capabilities.setExecutionMode("tab-1", { executionMode: "serial", runsPerTest: 2 });
+    await capabilities.setRunsPerTest("tab-1", { runsPerTest: 3 });
+
+    expect(calls).toEqual([
+      ["createTab", "workspace-1", { title: "Tab" }],
+      ["selectBenchPack", "tab-1", "pack-1", "Pack"],
+      ["selectModels", "tab-1", { modelIds: ["model-1"] }],
+      ["patchTab", "tab-1", { samplingOverrides: { temperature: 0.2 } }],
+      ["patchTab", "tab-1", { executionMode: "serial", runsPerTest: 2 }],
+      ["patchTab", "tab-1", { runsPerTest: 3 }]
+    ]);
+  });
 });
 
