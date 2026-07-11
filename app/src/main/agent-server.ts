@@ -33,6 +33,7 @@ import {
 } from "./agent/capabilities";
 
 import { createAgentGuide } from "./agent/guide";
+import { routeReadOnlyAgentHttp } from "./agent/http-router";
 import { createOpenApiDocument } from "./agent/openapi";
 type AgentSession = {
   token: string;
@@ -508,31 +509,12 @@ class BenchLocalAgentServer {
   private async routeV1(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
     const capabilities = this.createReadOnlyCapabilities();
     const writeCapabilities = this.createWriteCapabilities();
-
-    if (request.method === "GET" && segments.length === 1 && segments[0] === "config") {
-      sendJson(response, 200, await capabilities.config());
+    const readRoute = await routeReadOnlyAgentHttp(request.method, segments, capabilities);
+    if (readRoute) {
+      sendJson(response, readRoute.statusCode, readRoute.payload);
       return;
     }
 
-    if (request.method === "GET" && segments.length === 1 && segments[0] === "workspaces") {
-      sendJson(response, 200, await capabilities.workspaces());
-      return;
-    }
-
-    if (request.method === "GET" && segments.length === 1 && segments[0] === "benchpacks") {
-      sendJson(response, 200, await capabilities.benchPacks());
-      return;
-    }
-
-    if (request.method === "GET" && segments.length === 2 && segments[0] === "benchpacks" && segments[1] === "registry") {
-      sendJson(response, 200, await capabilities.benchPackRegistry());
-      return;
-    }
-
-    if (request.method === "GET" && segments.length === 1 && segments[0] === "providers") {
-      sendJson(response, 200, await capabilities.providers());
-      return;
-    }
 
     if (request.method === "POST" && segments.length === 1 && segments[0] === "providers") {
       const body = await readJsonRequest(request);
@@ -546,10 +528,6 @@ class BenchLocalAgentServer {
       return;
     }
 
-    if (request.method === "GET" && segments.length === 1 && segments[0] === "models") {
-      sendJson(response, 200, await capabilities.models());
-      return;
-    }
 
     if (request.method === "POST" && segments.length === 1 && segments[0] === "models") {
       const body = await readJsonRequest(request);
@@ -558,10 +536,6 @@ class BenchLocalAgentServer {
       return;
     }
 
-    if (request.method === "GET" && segments.length === 2 && segments[0] === "models" && segments[1] === "availability") {
-      sendJson(response, 200, await capabilities.modelAvailability());
-      return;
-    }
 
     if (request.method === "POST" && segments.length === 3 && segments[0] === "models" && segments[1] === "availability" && segments[2] === "refresh") {
       const body = await readJsonRequest(request);
@@ -572,21 +546,6 @@ class BenchLocalAgentServer {
 
     if (segments[0] === "models" && segments.length >= 2) {
       await this.routeModelCommand(request, response, segments);
-      return;
-    }
-
-    if (request.method === "GET" && segments.length === 2 && segments[0] === "runs" && segments[1] === "active") {
-      sendJson(response, 200, await capabilities.activeRuns());
-      return;
-    }
-
-    if (request.method === "GET" && segments.length === 1 && segments[0] === "verifiers") {
-      sendJson(response, 200, await capabilities.verifiers());
-      return;
-    }
-
-    if (segments[0] === "benchpacks" && segments.length >= 3 && segments[2] === "history") {
-      await this.routeHistory(request, response, segments);
       return;
     }
 
@@ -607,13 +566,8 @@ class BenchLocalAgentServer {
 
   private async routeProviderCommand(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
     const providerId = segments[1];
-    const capabilities = this.createReadOnlyCapabilities();
     const writeCapabilities = this.createWriteCapabilities();
 
-    if (request.method === "GET" && segments.length === 2) {
-      sendJson(response, 200, await capabilities.provider(providerId));
-      return;
-    }
 
     if (request.method === "PATCH" && segments.length === 2) {
       const body = await readJsonRequest(request);
@@ -632,22 +586,13 @@ class BenchLocalAgentServer {
       return;
     }
 
-    if (request.method === "GET" && segments.length === 4 && segments[2] === "models" && segments[3] === "discover") {
-      sendJson(response, 200, await capabilities.discoverProviderModels(providerId));
-      return;
-    }
 
     throw new HttpError(404, "Unknown endpoint.");
   }
 
   private async routeModelCommand(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
-    const capabilities = this.createReadOnlyCapabilities();
     const modelId = segments[1];
 
-    if (request.method === "GET" && segments.length === 2) {
-      sendJson(response, 200, await capabilities.model(modelId));
-      return;
-    }
 
     const writeCapabilities = this.createWriteCapabilities();
     if (request.method === "PATCH" && segments.length === 2) {
@@ -664,23 +609,6 @@ class BenchLocalAgentServer {
 
     if (request.method === "POST" && segments.length === 3 && segments[2] === "duplicate") {
       sendJson(response, 201, await writeCapabilities.duplicateModel(modelId));
-      return;
-    }
-
-    throw new HttpError(404, "Unknown endpoint.");
-  }
-
-  private async routeHistory(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
-    const capabilities = this.createReadOnlyCapabilities();
-    const benchPackId = segments[1];
-
-    if (request.method === "GET" && segments.length === 3) {
-      sendJson(response, 200, await capabilities.runHistory(benchPackId));
-      return;
-    }
-
-    if (request.method === "GET" && segments.length === 4) {
-      sendJson(response, 200, await capabilities.runSummary(benchPackId, segments[3]));
       return;
     }
 

@@ -7,9 +7,11 @@ import {
   READ_ONLY_CAPABILITY_DEFINITIONS,
   WRITE_CAPABILITY_DEFINITIONS,
   createReadOnlyAgentCapabilities,
-  createWriteAgentCapabilities
+  createWriteAgentCapabilities,
+  type ReadOnlyAgentCapabilities
 } from "../src/main/agent/capabilities";
 import { createAgentGuide } from "../src/main/agent/guide";
+import { routeReadOnlyAgentHttp } from "../src/main/agent/http-router";
 import { createOpenApiDocument } from "../src/main/agent/openapi";
 
 import {
@@ -318,6 +320,45 @@ describe("Agent API contract", () => {
     expect(guide).toContain("benchlocal_get_recent_events");
   });
 
+
+  it("routes read-only HTTP capabilities before write command dispatch", async () => {
+    const calls: unknown[] = [];
+    const capabilities = {
+      config: async () => ({ config: true }),
+      workspaces: async () => ({ workspaces: true }),
+      benchPacks: async () => ({ benchPacks: true }),
+      benchPackRegistry: async () => ({ registry: true }),
+      providers: async () => ({ providers: true }),
+      provider: async (providerId: string) => {
+        calls.push(["provider", providerId]);
+        return { providerId };
+      },
+      discoverProviderModels: async (providerId: string) => ({ providerId }),
+      models: async () => ({ models: true }),
+      modelAvailability: async () => ({ availability: true }),
+      model: async (modelId: string) => ({ modelId }),
+      activeRuns: async () => ({ activeRuns: true }),
+      verifiers: async () => ({ verifiers: true }),
+      runHistory: async (benchPackId: string) => ({ benchPackId }),
+      runSummary: async (benchPackId: string, runId: string) => {
+        calls.push(["runSummary", benchPackId, runId]);
+        return { benchPackId, runId };
+      }
+    } as unknown as ReadOnlyAgentCapabilities;
+
+    await expect(routeReadOnlyAgentHttp("GET", ["config"], capabilities)).resolves.toEqual({
+      statusCode: 200,
+      payload: { config: true }
+    });
+    await expect(routeReadOnlyAgentHttp("GET", ["models", "availability"], capabilities)).resolves.toMatchObject({
+      payload: { availability: true }
+    });
+    await routeReadOnlyAgentHttp("GET", ["providers", "provider-1"], capabilities);
+    await routeReadOnlyAgentHttp("GET", ["benchpacks", "pack-1", "history", "run-1"], capabilities);
+    await expect(routeReadOnlyAgentHttp("POST", ["config"], capabilities)).resolves.toBeNull();
+    await expect(routeReadOnlyAgentHttp("GET", ["unknown"], capabilities)).resolves.toBeNull();
+    expect(calls).toEqual([["provider", "provider-1"], ["runSummary", "pack-1", "run-1"]]);
+  });
 
 });
 
