@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod/v4";
 import type {
   BenchLocalAgentCreateModelRequest,
@@ -34,56 +33,14 @@ import {
   modelSelectionSchema,
   providerKindSchema
 } from "./schemas";
+import { jsonToolResult } from "./mcp-content";
+import { registerBenchLocalMcpResources } from "./mcp-resources";
 
 export type BenchLocalMcpOptions = {
   getAgentGuide: () => string;
   getOpenApiDocument: () => unknown;
   getRecentEvents: () => BenchLocalAgentEvent[];
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stringifyJson(value: unknown): string {
-  return JSON.stringify(value, null, 2);
-}
-
-function jsonToolResult(payload: unknown): CallToolResult {
-  return {
-    structuredContent: isRecord(payload) ? payload : { result: payload },
-    content: [
-      {
-        type: "text",
-        text: stringifyJson(payload)
-      }
-    ]
-  };
-}
-
-function jsonResource(uri: string, payload: unknown) {
-  return {
-    contents: [
-      {
-        uri,
-        mimeType: "application/json",
-        text: stringifyJson(payload)
-      }
-    ]
-  };
-}
-
-function textResource(uri: string, mimeType: string, text: string) {
-  return {
-    contents: [
-      {
-        uri,
-        mimeType,
-        text
-      }
-    ]
-  };
-}
 
 export function createBenchLocalMcpServer(controller: BenchLocalController, options: BenchLocalMcpOptions): McpServer {
   const capabilities = createReadOnlyAgentCapabilities(controller, options.getRecentEvents);
@@ -100,135 +57,7 @@ export function createBenchLocalMcpServer(controller: BenchLocalController, opti
     websiteUrl: "https://github.com/stevibe/BenchLocal"
   });
 
-  server.registerResource(
-    "benchlocal-agent-guide",
-    "benchlocal://agent/guide",
-    {
-      title: "BenchLocal Agent Guide",
-      description: "Agent-readable BenchLocal control instructions.",
-      mimeType: "text/markdown"
-    },
-    async (uri) => textResource(uri.href, "text/markdown", options.getAgentGuide())
-  );
-
-  server.registerResource(
-    "benchlocal-openapi",
-    "benchlocal://agent/openapi",
-    {
-      title: "BenchLocal OpenAPI Document",
-      description: "OpenAPI description for the HTTP Agent API.",
-      mimeType: "application/json"
-    },
-    async (uri) => jsonResource(uri.href, options.getOpenApiDocument())
-  );
-
-  server.registerResource(
-    "benchlocal-config",
-    READ_ONLY_CAPABILITY_DEFINITIONS.config.mcp.resource,
-    {
-      title: "BenchLocal Config",
-      description: "Redacted BenchLocal configuration.",
-      mimeType: "application/json"
-    },
-    async (uri) => jsonResource(uri.href, await capabilities.config())
-  );
-
-  server.registerResource(
-    "benchlocal-workspaces",
-    READ_ONLY_CAPABILITY_DEFINITIONS.workspaces.mcp.resource,
-    {
-      title: "BenchLocal Workspaces",
-      description: "Workspace and tab state.",
-      mimeType: "application/json"
-    },
-    async (uri) => jsonResource(uri.href, await capabilities.workspaces())
-  );
-
-  server.registerResource(
-    "benchlocal-benchpacks",
-    READ_ONLY_CAPABILITY_DEFINITIONS.benchPacks.mcp.resource,
-    {
-      title: "BenchLocal Bench Packs",
-      description: "Installed Bench Packs and scenario metadata.",
-      mimeType: "application/json"
-    },
-    async (uri) => jsonResource(uri.href, await capabilities.benchPacks())
-  );
-
-  server.registerResource(
-    "benchlocal-providers",
-    READ_ONLY_CAPABILITY_DEFINITIONS.providers.mcp.resource,
-    {
-      title: "BenchLocal Providers",
-      description: "Configured providers with secrets redacted.",
-      mimeType: "application/json"
-    },
-    async (uri) => jsonResource(uri.href, await capabilities.providers())
-  );
-
-  server.registerResource(
-    "benchlocal-models",
-    READ_ONLY_CAPABILITY_DEFINITIONS.models.mcp.resource,
-    {
-      title: "BenchLocal Models",
-      description: "Configured benchmark models.",
-      mimeType: "application/json"
-    },
-    async (uri) => jsonResource(uri.href, await capabilities.models())
-  );
-
-  server.registerResource(
-    "benchlocal-active-runs",
-    READ_ONLY_CAPABILITY_DEFINITIONS.activeRuns.mcp.resource,
-    {
-      title: "BenchLocal Active Runs",
-      description: "Currently active benchmark runs.",
-      mimeType: "application/json"
-    },
-    async (uri) => jsonResource(uri.href, await capabilities.activeRuns())
-  );
-
-  server.registerResource(
-    "benchlocal-recent-events",
-    READ_ONLY_CAPABILITY_DEFINITIONS.recentEvents.mcp.resource,
-    {
-      title: "BenchLocal Recent Events",
-      description: "Recent Agent API events for progress polling.",
-      mimeType: "application/json"
-    },
-    async (uri) => jsonResource(uri.href, await capabilities.recentEvents())
-  );
-
-  server.registerPrompt(
-    "benchlocal-run-benchpack",
-    {
-      title: "Run a BenchLocal Bench Pack",
-      description: "Recommended workflow for selecting a Bench Pack, selecting models, and starting a run.",
-      argsSchema: {
-        benchPackId: z.string().describe("Bench Pack id, for example toolcall-15."),
-        modelIds: z.string().describe("Comma-separated model ids to select for the run."),
-        workspaceId: z.string().optional().describe("Workspace id. If omitted, inspect benchlocal://state/workspaces first.")
-      }
-    },
-    async ({ benchPackId, modelIds, workspaceId }) => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: [
-              "Use BenchLocal MCP tools to run a benchmark.",
-              workspaceId ? `Workspace: ${workspaceId}` : "First read benchlocal://state/workspaces and choose the active workspace.",
-              `Bench Pack: ${benchPackId}`,
-              `Models: ${modelIds}`,
-              "Create or update a tab, select the Bench Pack, select the models, refresh availability, then call benchlocal_start_run.",
-              "Poll benchlocal_get_recent_events or read benchlocal://state/events/recent while the UI shows progress in real time."
-            ].join("\n")
-          }
-        }
-      ]
-    })
-  );
+  registerBenchLocalMcpResources(server, capabilities, options);
 
   server.registerTool(
     "benchlocal_get_health",

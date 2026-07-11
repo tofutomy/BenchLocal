@@ -36,10 +36,11 @@ function readStringMatches(source: string, pattern: RegExp): string[] {
 
 describe("Agent API contract", () => {
   it("keeps the documented HTTP and MCP entrypoints wired", async () => {
-    const [agentServerSource, agentMcpSource, mcpRouterSource, capabilitySource] = await Promise.all([
+    const [agentServerSource, agentMcpSource, mcpRouterSource, mcpResourcesSource, capabilitySource] = await Promise.all([
       readProjectFile("src/main/agent-server.ts"),
       readProjectFile("src/main/agent-mcp.ts"),
       readProjectFile("src/main/agent/mcp-router.ts"),
+      readProjectFile("src/main/agent/mcp-resources.ts"),
       readProjectFile("src/main/agent/capabilities.ts")
     ]);
 
@@ -53,6 +54,9 @@ describe("Agent API contract", () => {
     expect(agentMcpSource).toContain("createBenchLocalMcpServer(controller, options)");
     expect(agentMcpSource).not.toContain("server.registerTool(");
     expect(mcpRouterSource).toContain("server.registerTool(");
+    expect(mcpRouterSource).toContain("registerBenchLocalMcpResources(server, capabilities, options)");
+    expect(mcpRouterSource).not.toContain("server.registerResource(");
+    expect(mcpResourcesSource).toContain("server.registerResource(");
     expect([...mcpTools]).toEqual(
       expect.arrayContaining([
         "benchlocal_get_health",
