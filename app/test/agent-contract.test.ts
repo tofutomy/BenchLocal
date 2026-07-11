@@ -36,19 +36,23 @@ function readStringMatches(source: string, pattern: RegExp): string[] {
 
 describe("Agent API contract", () => {
   it("keeps the documented HTTP and MCP entrypoints wired", async () => {
-    const [agentServerSource, agentMcpSource, capabilitySource] = await Promise.all([
+    const [agentServerSource, agentMcpSource, mcpRouterSource, capabilitySource] = await Promise.all([
       readProjectFile("src/main/agent-server.ts"),
       readProjectFile("src/main/agent-mcp.ts"),
+      readProjectFile("src/main/agent/mcp-router.ts"),
       readProjectFile("src/main/agent/capabilities.ts")
     ]);
 
     const pathnameChecks = new Set(readStringMatches(agentServerSource, /url\.pathname === "([^"]+)"/g));
-    const mcpTools = new Set(readStringMatches(`${agentMcpSource}\n${capabilitySource}`, /"(benchlocal_[^"]+)"/g));
+    const mcpTools = new Set(readStringMatches(`${mcpRouterSource}\n${capabilitySource}`, /"(benchlocal_[^"]+)"/g));
 
     expect([...pathnameChecks]).toEqual(
       expect.arrayContaining(["/v1/health", "/mcp", "/v1/mcp", "/v1/events", "/v1/agent-guide", "/v1/openapi.json"])
     );
     expect(agentServerSource).toContain("handleBenchLocalMcpRequest(this.controller");
+    expect(agentMcpSource).toContain("createBenchLocalMcpServer(controller, options)");
+    expect(agentMcpSource).not.toContain("server.registerTool(");
+    expect(mcpRouterSource).toContain("server.registerTool(");
     expect([...mcpTools]).toEqual(
       expect.arrayContaining([
         "benchlocal_get_health",
