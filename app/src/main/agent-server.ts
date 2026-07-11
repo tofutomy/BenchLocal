@@ -28,6 +28,7 @@ import { benchLocalController, type BenchLocalController } from "./controller";
 import { handleBenchLocalMcpRequest } from "./agent-mcp";
 import {
   CapabilityNotFoundError,
+  CapabilityValidationError,
   createReadOnlyAgentCapabilities,
   createWriteAgentCapabilities
 } from "./agent/capabilities";
@@ -144,7 +145,7 @@ function sendText(response: ServerResponse, statusCode: number, contentType: str
 }
 
 function sendError(response: ServerResponse, error: unknown): void {
-  const statusCode = error instanceof HttpError || error instanceof CapabilityNotFoundError ? error.statusCode : 500;
+  const statusCode = error instanceof HttpError || error instanceof CapabilityNotFoundError || error instanceof CapabilityValidationError ? error.statusCode : 500;
   const message = error instanceof Error ? error.message : "Internal server error.";
 
   sendJson(response, statusCode, {
@@ -941,7 +942,11 @@ Refresh selected models:
   }
 
   private createWriteCapabilities() {
-    return createWriteAgentCapabilities(this.controller);
+    return createWriteAgentCapabilities(this.controller, {
+      onBackgroundError: (operation, error) => {
+        console.error(`[benchlocal] agent-started ${operation} failed`, error);
+      }
+    });
   }
 
   private async routeV1(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
@@ -1186,21 +1191,19 @@ Refresh selected models:
     if (request.method === "POST" && segments.length === 3 && segments[2] === "runs") {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["benchPackId", "modelIds", "executionMode", "runsPerTest", "generation"]);
-      await this.startRun(tabId, body as BenchLocalAgentRunRequest);
-      sendJson(response, 202, { accepted: true, tabId });
+      sendJson(response, 202, await writeCapabilities.startRun(tabId, body as BenchLocalAgentRunRequest));
       return;
     }
 
     if (request.method === "POST" && segments.length === 4 && segments[2] === "runs" && segments[3] === "stop") {
-      sendJson(response, 200, await this.controller.stopRun(tabId));
+      sendJson(response, 200, await writeCapabilities.stopRun(tabId));
       return;
     }
 
     if (request.method === "POST" && segments.length === 5 && segments[2] === "runs" && segments[4] === "resume") {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["executionMode", "runsPerTest", "generation"]);
-      await this.resumeRun(tabId, segments[3], body as BenchLocalAgentResumeRunRequest);
-      sendJson(response, 202, { accepted: true, tabId, runId: segments[3] });
+      sendJson(response, 202, await writeCapabilities.resumeRun(tabId, segments[3], body as BenchLocalAgentResumeRunRequest));
       return;
     }
 
@@ -1232,28 +1235,6 @@ Refresh selected models:
   }
 
 
-  private async startRun(tabId: string, request: BenchLocalAgentRunRequest): Promise<void> {
-    const resolved = await this.resolveTabRun(tabId, request);
-
-    void this.controller.runBenchPack(resolved).then(async (summary) => {
-      await this.controller.setTabLoadedRun(tabId, summary.runId);
-    }).catch((error) => {
-      console.error("[benchlocal] agent-started run failed", error);
-    });
-  }
-
-  private async resumeRun(tabId: string, runId: string, request: BenchLocalAgentResumeRunRequest): Promise<void> {
-    const resolved = await this.resolveTabRun(tabId, request);
-
-    void this.controller.resumeRun({
-      ...resolved,
-      runId
-    }).then(async (summary) => {
-      await this.controller.setTabLoadedRun(tabId, summary.runId);
-    }).catch((error) => {
-      console.error("[benchlocal] agent-started resume failed", error);
-    });
-  }
 
   private async retryScenario(tabId: string, runId: string, request: BenchLocalAgentRetryScenarioRequest): Promise<void> {
     const { tab } = await this.loadRequiredTab(tabId);
@@ -1328,24 +1309,6 @@ Refresh selected models:
       kind,
       cellCount: plan.cells.length,
       groupCount: plan.groups.length
-    };
-  }
-
-  private async resolveTabRun(tabId: string, request: BenchLocalAgentRunRequest | BenchLocalAgentResumeRunRequest) {
-    const { tab } = await this.loadRequiredTab(tabId);
-    const benchPackId = "benchPackId" in request && request.benchPackId ? request.benchPackId : tab.benchPackId;
-
-    if (!benchPackId) {
-      throw new HttpError(400, `Tab "${tabId}" does not have a Bench Pack selected.`);
-    }
-
-    return {
-      tabId,
-      benchPackId,
-      modelIds: "modelIds" in request && request.modelIds ? request.modelIds : tab.modelSelections.map((selection) => selection.modelId),
-      executionMode: request.executionMode ?? tab.executionMode,
-      runsPerTest: request.runsPerTest ?? tab.runsPerTest,
-      generation: request.generation ?? tab.samplingOverrides
     };
   }
 

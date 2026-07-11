@@ -10,7 +10,9 @@ import type {
   BenchLocalAgentExecutionModeRequest,
   BenchLocalAgentRunsPerTestRequest,
   BenchLocalAgentSelectBenchPackRequest,
-  BenchLocalAgentSelectModelsRequest
+  BenchLocalAgentSelectModelsRequest,
+  BenchLocalAgentRunRequest,
+  BenchLocalAgentResumeRunRequest
 } from "@core";
 import type { BenchLocalController } from "../controller";
 
@@ -108,6 +110,14 @@ export class CapabilityNotFoundError extends Error {
     super(message);
   }
 }
+export class CapabilityValidationError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+  }
+}
+
 
 export function createReadOnlyAgentCapabilities(
   controller: BenchLocalController,
@@ -261,13 +271,75 @@ export const WRITE_CAPABILITY_DEFINITIONS = {
     id: "tabs.runs-per-test.set",
     http: { method: "POST", path: "/v1/tabs/{tabId}/runs-per-test", successStatus: 200 },
     mcp: { tool: "benchlocal_set_runs_per_test" }
+  },
+  startRun: {
+    id: "runs.start",
+    http: { method: "POST", path: "/v1/tabs/{tabId}/runs", successStatus: 202 },
+    mcp: { tool: "benchlocal_start_run" }
+  },
+  resumeRun: {
+    id: "runs.resume",
+    http: { method: "POST", path: "/v1/tabs/{tabId}/runs/{runId}/resume", successStatus: 202 },
+    mcp: { tool: "benchlocal_resume_run" }
+  },
+  stopRun: {
+    id: "runs.stop",
+    http: { method: "POST", path: "/v1/tabs/{tabId}/runs/stop", successStatus: 200 },
+    mcp: { tool: "benchlocal_stop_run" }
   }
 } as const;
 
 export type WriteCapabilityKey = keyof typeof WRITE_CAPABILITY_DEFINITIONS;
 
-export function createWriteAgentCapabilities(controller: BenchLocalController) {
+export function createWriteAgentCapabilities(
+  controller: BenchLocalController,
+  options?: { onBackgroundError?: (operation: "start" | "resume", error: unknown) => void }
+) {
   // 写 handler 只编排领域调用，HTTP 状态码与 MCP 注解继续由各自适配层负责。
+  const resolveTabRun = async (
+    tabId: string,
+    request: BenchLocalAgentRunRequest | BenchLocalAgentResumeRunRequest
+  ) => {
+    const { state } = await controller.loadWorkspaceState();
+    const tab = state.tabs[tabId];
+
+    if (!tab) {
+      throw new CapabilityNotFoundError(`Tab "${tabId}" was not found.`);
+    }
+
+    const benchPackId = "benchPackId" in request && request.benchPackId ? request.benchPackId : tab.benchPackId;
+    if (!benchPackId) {
+      throw new CapabilityValidationError(`Tab "${tabId}" does not have a Bench Pack selected.`);
+    }
+
+    return {
+      tabId,
+      benchPackId,
+      modelIds: "modelIds" in request && request.modelIds
+        ? request.modelIds
+        : tab.modelSelections.map((selection) => selection.modelId),
+      executionMode: request.executionMode ?? tab.executionMode,
+      runsPerTest: request.runsPerTest ?? tab.runsPerTest,
+      generation: request.generation ?? tab.samplingOverrides
+    };
+  };
+
+  const startRun = async (tabId: string, request: BenchLocalAgentRunRequest) => {
+    const resolved = await resolveTabRun(tabId, request);
+    void controller.runBenchPack(resolved).then(async (summary) => {
+      await controller.setTabLoadedRun(tabId, summary.runId);
+    }).catch((error) => options?.onBackgroundError?.("start", error));
+    return { accepted: true, tabId };
+  };
+
+  const resumeRun = async (tabId: string, runId: string, request: BenchLocalAgentResumeRunRequest) => {
+    const resolved = await resolveTabRun(tabId, request);
+    void controller.resumeRun({ ...resolved, runId }).then(async (summary) => {
+      await controller.setTabLoadedRun(tabId, summary.runId);
+    }).catch((error) => options?.onBackgroundError?.("resume", error));
+    return { accepted: true, tabId, runId };
+  };
+
   return {
     createProvider: (input: BenchLocalAgentCreateProviderRequest) => controller.createProvider(input),
     updateProvider: (providerId: string, input: BenchLocalAgentPatchProviderRequest) => controller.updateProvider(providerId, input),
@@ -287,6 +359,9 @@ export function createWriteAgentCapabilities(controller: BenchLocalController) {
     setExecutionMode: (tabId: string, input: BenchLocalAgentExecutionModeRequest) =>
       controller.patchTab(tabId, input),
     setRunsPerTest: (tabId: string, input: BenchLocalAgentRunsPerTestRequest) =>
-      controller.patchTab(tabId, input)
+      controller.patchTab(tabId, input),
+    startRun,
+    resumeRun,
+    stopRun: (tabId: string) => controller.stopRun(tabId)
   };
 }

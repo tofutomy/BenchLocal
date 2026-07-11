@@ -137,57 +137,6 @@ async function loadRequiredTab(controller: BenchLocalController, tabId: string):
   return { tab };
 }
 
-async function resolveTabRun(
-  controller: BenchLocalController,
-  tabId: string,
-  request: BenchLocalAgentRunRequest | BenchLocalAgentResumeRunRequest
-) {
-  const { tab } = await loadRequiredTab(controller, tabId);
-  const benchPackId = "benchPackId" in request && request.benchPackId ? request.benchPackId : tab.benchPackId;
-
-  if (!benchPackId) {
-    throw new Error(`Tab "${tabId}" does not have a Bench Pack selected.`);
-  }
-
-  return {
-    tabId,
-    benchPackId,
-    modelIds: "modelIds" in request && request.modelIds ? request.modelIds : tab.modelSelections.map((selection) => selection.modelId),
-    executionMode: request.executionMode ?? tab.executionMode,
-    runsPerTest: request.runsPerTest ?? tab.runsPerTest,
-    generation: request.generation ?? tab.samplingOverrides
-  };
-}
-
-
-async function startRun(controller: BenchLocalController, tabId: string, request: BenchLocalAgentRunRequest): Promise<void> {
-  const resolved = await resolveTabRun(controller, tabId, request);
-
-  void controller.runBenchPack(resolved).then(async (summary) => {
-    await controller.setTabLoadedRun(tabId, summary.runId);
-  }).catch((error) => {
-    console.error("[benchlocal] mcp-started run failed", error);
-  });
-}
-
-async function resumeRun(
-  controller: BenchLocalController,
-  tabId: string,
-  runId: string,
-  request: BenchLocalAgentResumeRunRequest
-): Promise<void> {
-  const resolved = await resolveTabRun(controller, tabId, request);
-
-  void controller.resumeRun({
-    ...resolved,
-    runId
-  }).then(async (summary) => {
-    await controller.setTabLoadedRun(tabId, summary.runId);
-  }).catch((error) => {
-    console.error("[benchlocal] mcp-started resume failed", error);
-  });
-}
-
 async function retryScenario(
   controller: BenchLocalController,
   tabId: string,
@@ -272,7 +221,11 @@ async function retryBatch(
 
 function createBenchLocalMcpServer(controller: BenchLocalController, options: BenchLocalMcpOptions): McpServer {
   const capabilities = createReadOnlyAgentCapabilities(controller, options.getRecentEvents);
-  const writeCapabilities = createWriteAgentCapabilities(controller);
+  const writeCapabilities = createWriteAgentCapabilities(controller, {
+    onBackgroundError: (operation, error) => {
+      console.error(`[benchlocal] mcp-started ${operation} failed`, error);
+    }
+  });
   const server = new McpServer({
     name: "benchlocal",
     title: "BenchLocal",
@@ -810,7 +763,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_start_run",
+    WRITE_CAPABILITY_DEFINITIONS.startRun.mcp.tool,
     {
       title: "Start Run",
       description: "Start a benchmark run for a tab. Returns immediately; poll recent events for progress.",
@@ -824,14 +777,11 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, openWorldHint: true }
     },
-    async ({ tabId, ...request }) => {
-      await startRun(controller, tabId, request as BenchLocalAgentRunRequest);
-      return jsonToolResult({ accepted: true, tabId });
-    }
+    async ({ tabId, ...request }) => jsonToolResult(await writeCapabilities.startRun(tabId, request as BenchLocalAgentRunRequest))
   );
 
   server.registerTool(
-    "benchlocal_resume_run",
+    WRITE_CAPABILITY_DEFINITIONS.resumeRun.mcp.tool,
     {
       title: "Resume Run",
       description: "Resume a historical benchmark run. Returns immediately; poll recent events for progress.",
@@ -844,10 +794,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, openWorldHint: true }
     },
-    async ({ tabId, runId, ...request }) => {
-      await resumeRun(controller, tabId, runId, request as BenchLocalAgentResumeRunRequest);
-      return jsonToolResult({ accepted: true, tabId, runId });
-    }
+    async ({ tabId, runId, ...request }) => jsonToolResult(await writeCapabilities.resumeRun(tabId, runId, request as BenchLocalAgentResumeRunRequest))
   );
 
   server.registerTool(
@@ -908,7 +855,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_stop_run",
+    WRITE_CAPABILITY_DEFINITIONS.stopRun.mcp.tool,
     {
       title: "Stop Run",
       description: "Stop the active run for a tab.",
@@ -917,7 +864,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, openWorldHint: false }
     },
-    async ({ tabId }) => jsonToolResult(await controller.stopRun(tabId))
+    async ({ tabId }) => jsonToolResult(await writeCapabilities.stopRun(tabId))
   );
 
   server.registerTool(

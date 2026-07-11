@@ -164,5 +164,53 @@ describe("Agent API contract", () => {
       ["patchTab", "tab-1", { runsPerTest: 3 }]
     ]);
   });
+
+  it("resolves run defaults and returns accepted lifecycle responses", async () => {
+    const runInputs: unknown[] = [];
+    const loadedRuns: string[] = [];
+    const controller = {
+      loadWorkspaceState: async () => ({
+        state: {
+          tabs: {
+            tab1: {
+              benchPackId: "pack-1",
+              modelSelections: [{ modelId: "model-1" }],
+              executionMode: "serial",
+              runsPerTest: 2,
+              samplingOverrides: { temperature: 0.3 }
+            },
+            empty: { benchPackId: null, modelSelections: [], executionMode: "serial", runsPerTest: 1 }
+          }
+        }
+      }),
+      runBenchPack: async (input: unknown) => {
+        runInputs.push(input);
+        return { runId: "run-new" };
+      },
+      resumeRun: async (input: unknown) => {
+        runInputs.push(input);
+        return { runId: "run-resumed" };
+      },
+      setTabLoadedRun: async (_tabId: string, runId: string) => loadedRuns.push(runId),
+      stopRun: async (tabId: string) => ({ stopped: true, tabId })
+    } as unknown as BenchLocalController;
+    const capabilities = createWriteAgentCapabilities(controller);
+
+    await expect(capabilities.startRun("tab1", {})).resolves.toEqual({ accepted: true, tabId: "tab1" });
+    await expect(capabilities.resumeRun("tab1", "run-old", { runsPerTest: 4 })).resolves.toEqual({
+      accepted: true,
+      tabId: "tab1",
+      runId: "run-old"
+    });
+    await expect(capabilities.stopRun("tab1")).resolves.toEqual({ stopped: true, tabId: "tab1" });
+    expect(runInputs).toEqual([
+      { tabId: "tab1", benchPackId: "pack-1", modelIds: ["model-1"], executionMode: "serial", runsPerTest: 2, generation: { temperature: 0.3 } },
+      { tabId: "tab1", benchPackId: "pack-1", modelIds: ["model-1"], executionMode: "serial", runsPerTest: 4, generation: { temperature: 0.3 }, runId: "run-old" }
+    ]);
+    await expect(capabilities.startRun("missing", {})).rejects.toMatchObject({ statusCode: 404 });
+    await expect(capabilities.startRun("empty", {})).rejects.toMatchObject({ statusCode: 400 });
+    await Promise.resolve();
+    expect(loadedRuns).toEqual(["run-new", "run-resumed"]);
+  });
 });
 
