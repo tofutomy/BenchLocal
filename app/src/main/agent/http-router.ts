@@ -18,7 +18,7 @@ import type {
 import {
   WRITE_CAPABILITY_DEFINITIONS,
   type ReadOnlyAgentCapabilities,
-  type createWriteAgentCapabilities
+  type WriteAgentCapabilities
 } from "./capabilities";
 
 export type AgentHttpRouteResult = {
@@ -31,7 +31,6 @@ export class AgentHttpError extends Error {
   }
 }
 
-type WriteAgentCapabilities = ReturnType<typeof createWriteAgentCapabilities>;
 type ReadBody = () => Promise<unknown>;
 
 function assertOnlyKeys(value: unknown, allowedKeys: string[]): asserts value is Record<string, unknown> {

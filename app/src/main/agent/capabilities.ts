@@ -308,6 +308,8 @@ export const WRITE_CAPABILITY_DEFINITIONS = {
 
 export type WriteCapabilityKey = keyof typeof WRITE_CAPABILITY_DEFINITIONS;
 
+export type WriteAgentCapabilities = ReturnType<typeof createWriteAgentCapabilities>;
+
 export function createWriteAgentCapabilities(
   controller: BenchLocalController,
   options?: { onBackgroundError?: (operation: "start" | "resume" | "retry" | "retryBatch", error: unknown) => void }
