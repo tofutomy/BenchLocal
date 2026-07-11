@@ -488,7 +488,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_get_provider",
+    READ_ONLY_CAPABILITY_DEFINITIONS.provider.mcp.tool,
     {
       title: "Get Provider",
       description: "Return one configured provider with secrets redacted.",
@@ -497,16 +497,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async ({ providerId }) => {
-      const providers = await controller.listProviders();
-      const provider = providers[providerId];
-
-      if (!provider) {
-        throw new Error(`Provider "${providerId}" was not found.`);
-      }
-
-      return jsonToolResult({ providerId, provider });
-    }
+    async ({ providerId }) => jsonToolResult(await capabilities.provider(providerId))
   );
 
   server.registerTool(
@@ -576,7 +567,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_discover_provider_models",
+    READ_ONLY_CAPABILITY_DEFINITIONS.discoverProviderModels.mcp.tool,
     {
       title: "Discover Provider Models",
       description: "Discover provider models when the provider supports model browsing.",
@@ -585,7 +576,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: true, openWorldHint: true }
     },
-    async ({ providerId }) => jsonToolResult({ models: await controller.discoverProviderModelsById(providerId) })
+    async ({ providerId }) => jsonToolResult(await capabilities.discoverProviderModels(providerId))
   );
 
   server.registerTool(
@@ -600,7 +591,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_get_model",
+    READ_ONLY_CAPABILITY_DEFINITIONS.model.mcp.tool,
     {
       title: "Get Model",
       description: "Return one configured benchmark model.",
@@ -609,16 +600,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async ({ modelId }) => {
-      const { config } = await loadOrCreateConfig();
-      const model = config.models.find((candidate) => candidate.id === modelId);
-
-      if (!model) {
-        throw new Error(`Model "${modelId}" was not found.`);
-      }
-
-      return jsonToolResult({ model });
-    }
+    async ({ modelId }) => jsonToolResult(await capabilities.model(modelId))
   );
 
   server.registerTool(
@@ -977,7 +959,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_list_run_history",
+    READ_ONLY_CAPABILITY_DEFINITIONS.runHistory.mcp.tool,
     {
       title: "List Run History",
       description: "Return run history for a Bench Pack.",
@@ -986,11 +968,11 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async ({ benchPackId }) => jsonToolResult({ history: await controller.listRunHistory(benchPackId) })
+    async ({ benchPackId }) => jsonToolResult(await capabilities.runHistory(benchPackId))
   );
 
   server.registerTool(
-    "benchlocal_get_run_summary",
+    READ_ONLY_CAPABILITY_DEFINITIONS.runSummary.mcp.tool,
     {
       title: "Get Run Summary",
       description: "Return a saved run summary.",
@@ -1000,7 +982,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async ({ benchPackId, runId }) => jsonToolResult({ run: await controller.loadRunHistory(benchPackId, runId) })
+    async ({ benchPackId, runId }) => jsonToolResult(await capabilities.runSummary(benchPackId, runId))
   );
 
   server.registerTool(

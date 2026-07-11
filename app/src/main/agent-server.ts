@@ -27,7 +27,7 @@ import type {
 import { getBenchLocalHome, loadOrCreateConfig } from "@core";
 import { benchLocalController, type BenchLocalController } from "./controller";
 import { handleBenchLocalMcpRequest } from "./agent-mcp";
-import { createReadOnlyAgentCapabilities } from "./agent/capabilities";
+import { CapabilityNotFoundError, createReadOnlyAgentCapabilities } from "./agent/capabilities";
 
 type AgentSession = {
   token: string;
@@ -141,7 +141,7 @@ function sendText(response: ServerResponse, statusCode: number, contentType: str
 }
 
 function sendError(response: ServerResponse, error: unknown): void {
-  const statusCode = error instanceof HttpError ? error.statusCode : 500;
+  const statusCode = error instanceof HttpError || error instanceof CapabilityNotFoundError ? error.statusCode : 500;
   const message = error instanceof Error ? error.message : "Internal server error.";
 
   sendJson(response, statusCode, {
@@ -933,8 +933,12 @@ Refresh selected models:
     };
   }
 
+  private createReadOnlyCapabilities() {
+    return createReadOnlyAgentCapabilities(this.controller, () => [...this.recentEvents]);
+  }
+
   private async routeV1(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
-    const capabilities = createReadOnlyAgentCapabilities(this.controller, () => [...this.recentEvents]);
+    const capabilities = this.createReadOnlyCapabilities();
 
     if (request.method === "GET" && segments.length === 1 && segments[0] === "config") {
       sendJson(response, 200, await capabilities.config());
@@ -1042,16 +1046,10 @@ Refresh selected models:
 
   private async routeProviderCommand(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
     const providerId = segments[1];
+    const capabilities = this.createReadOnlyCapabilities();
 
     if (request.method === "GET" && segments.length === 2) {
-      const providers = await this.controller.listProviders();
-      const provider = providers[providerId];
-
-      if (!provider) {
-        throw new HttpError(404, `Provider "${providerId}" was not found.`);
-      }
-
-      sendJson(response, 200, { providerId, provider });
+      sendJson(response, 200, await capabilities.provider(providerId));
       return;
     }
 
@@ -1073,7 +1071,7 @@ Refresh selected models:
     }
 
     if (request.method === "GET" && segments.length === 4 && segments[2] === "models" && segments[3] === "discover") {
-      sendJson(response, 200, { models: await this.controller.discoverProviderModelsById(providerId) });
+      sendJson(response, 200, await capabilities.discoverProviderModels(providerId));
       return;
     }
 
@@ -1081,17 +1079,11 @@ Refresh selected models:
   }
 
   private async routeModelCommand(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
+    const capabilities = this.createReadOnlyCapabilities();
     const modelId = segments[1];
 
     if (request.method === "GET" && segments.length === 2) {
-      const { config } = await loadOrCreateConfig();
-      const model = config.models.find((candidate) => candidate.id === modelId);
-
-      if (!model) {
-        throw new HttpError(404, `Model "${modelId}" was not found.`);
-      }
-
-      sendJson(response, 200, { model });
+      sendJson(response, 200, await capabilities.model(modelId));
       return;
     }
 
@@ -1116,15 +1108,16 @@ Refresh selected models:
   }
 
   private async routeHistory(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
+    const capabilities = this.createReadOnlyCapabilities();
     const benchPackId = segments[1];
 
     if (request.method === "GET" && segments.length === 3) {
-      sendJson(response, 200, { history: await this.controller.listRunHistory(benchPackId) });
+      sendJson(response, 200, await capabilities.runHistory(benchPackId));
       return;
     }
 
     if (request.method === "GET" && segments.length === 4) {
-      sendJson(response, 200, { run: await this.controller.loadRunHistory(benchPackId, segments[3]) });
+      sendJson(response, 200, await capabilities.runSummary(benchPackId, segments[3]));
       return;
     }
 
