@@ -97,6 +97,36 @@ describe("Agent API contract", () => {
     ]));
   });
 
+  it("covers every registered capability in MCP tools and OpenAPI", async () => {
+    const [readToolsSource, writeToolsSource] = await Promise.all([
+      readProjectFile("src/main/agent/mcp-read-tools.ts"),
+      readProjectFile("src/main/agent/mcp-write-tools.ts")
+    ]);
+    const readToolKeys = new Set(readStringMatches(
+      readToolsSource,
+      /READ_ONLY_CAPABILITY_DEFINITIONS\.([A-Za-z0-9_]+)\.mcp\.tool/g
+    ));
+    const writeToolKeys = new Set(readStringMatches(
+      writeToolsSource,
+      /WRITE_CAPABILITY_DEFINITIONS\.([A-Za-z0-9_]+)\.mcp\.tool/g
+    ));
+
+    expect(readToolKeys).toEqual(new Set(Object.keys(READ_ONLY_CAPABILITY_DEFINITIONS)));
+    expect(writeToolKeys).toEqual(new Set(Object.keys(WRITE_CAPABILITY_DEFINITIONS)));
+
+    const document = createOpenApiDocument() as { paths: Record<string, unknown> };
+    const documentedPaths = new Set(Object.keys(document.paths));
+    const registeredPaths = [
+      ...Object.values(READ_ONLY_CAPABILITY_DEFINITIONS).flatMap((definition) => [
+        ...("http" in definition ? [definition.http.path] : []),
+        ...("httpAliases" in definition ? definition.httpAliases : [])
+      ]),
+      ...Object.values(WRITE_CAPABILITY_DEFINITIONS).map((definition) => definition.http.path)
+    ];
+
+    expect(registeredPaths.filter((path) => !documentedPaths.has(path))).toEqual([]);
+  });
+
   it("shares read-only response shaping between HTTP and MCP adapters", async () => {
     const calls: string[] = [];
     const controller = {
