@@ -11,7 +11,10 @@ import {
   type ReadOnlyAgentCapabilities
 } from "../src/main/agent/capabilities";
 import { createAgentGuide } from "../src/main/agent/guide";
-import { routeReadOnlyAgentHttp } from "../src/main/agent/http-router";
+import {
+  routeProviderModelWriteAgentHttp,
+  routeReadOnlyAgentHttp
+} from "../src/main/agent/http-router";
 import { createOpenApiDocument } from "../src/main/agent/openapi";
 
 import {
@@ -358,6 +361,53 @@ describe("Agent API contract", () => {
     await expect(routeReadOnlyAgentHttp("POST", ["config"], capabilities)).resolves.toBeNull();
     await expect(routeReadOnlyAgentHttp("GET", ["unknown"], capabilities)).resolves.toBeNull();
     expect(calls).toEqual([["provider", "provider-1"], ["runSummary", "pack-1", "run-1"]]);
+  });
+
+  it("routes provider and model writes with registry status codes and body guards", async () => {
+    const calls: unknown[] = [];
+    let bodyReads = 0;
+    const controller = {
+      createProvider: async (input: unknown) => {
+        calls.push(["createProvider", input]);
+        return { created: true };
+      },
+      updateProvider: async (providerId: string, input: unknown) => ({ providerId, input }),
+      deleteProvider: async (providerId: string) => ({ providerId }),
+      duplicateProvider: async (providerId: string) => ({ providerId }),
+      createModel: async (input: unknown) => ({ input }),
+      updateModel: async (modelId: string, input: unknown) => ({ modelId, input }),
+      deleteModel: async (modelId: string) => {
+        calls.push(["deleteModel", modelId]);
+        return { modelId };
+      },
+      duplicateModel: async (modelId: string) => ({ modelId })
+    } as unknown as BenchLocalController;
+    const capabilities = createWriteAgentCapabilities(controller);
+    const readBody = async () => {
+      bodyReads += 1;
+      return { kind: "ollama", base_url: "http://localhost" };
+    };
+
+    await expect(routeProviderModelWriteAgentHttp("POST", ["providers"], capabilities, readBody)).resolves.toEqual({
+      statusCode: 201,
+      payload: { created: true }
+    });
+    await expect(routeProviderModelWriteAgentHttp("DELETE", ["models", "model-1"], capabilities, readBody)).resolves.toEqual({
+      statusCode: 200,
+      payload: { modelId: "model-1" }
+    });
+    await expect(routeProviderModelWriteAgentHttp("POST", ["unknown"], capabilities, readBody)).resolves.toBeNull();
+    expect(bodyReads).toBe(1);
+    expect(calls).toEqual([
+      ["createProvider", { kind: "ollama", base_url: "http://localhost" }],
+      ["deleteModel", "model-1"]
+    ]);
+    await expect(routeProviderModelWriteAgentHttp(
+      "POST",
+      ["providers"],
+      capabilities,
+      async () => ({ kind: "ollama", base_url: "http://localhost", unexpected: true })
+    )).rejects.toMatchObject({ statusCode: 400, message: "Unknown field: unexpected" });
   });
 
 });

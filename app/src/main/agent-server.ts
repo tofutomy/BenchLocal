@@ -6,12 +6,8 @@ import type {
   BenchLocalAgentAccess,
   BenchLocalAgentAccessState,
   BenchLocalAgentEvent,
-  BenchLocalAgentCreateModelRequest,
-  BenchLocalAgentCreateProviderRequest,
   BenchLocalAgentCreateTabRequest,
   BenchLocalAgentExecutionModeRequest,
-  BenchLocalAgentPatchModelRequest,
-  BenchLocalAgentPatchProviderRequest,
   BenchLocalAgentPatchTabRequest,
   BenchLocalAgentRetryBatchRequest,
   BenchLocalAgentRetryScenarioRequest,
@@ -33,7 +29,11 @@ import {
 } from "./agent/capabilities";
 
 import { createAgentGuide } from "./agent/guide";
-import { routeReadOnlyAgentHttp } from "./agent/http-router";
+import {
+  AgentHttpError,
+  routeProviderModelWriteAgentHttp,
+  routeReadOnlyAgentHttp
+} from "./agent/http-router";
 import { createOpenApiDocument } from "./agent/openapi";
 type AgentSession = {
   token: string;
@@ -137,7 +137,7 @@ function sendText(response: ServerResponse, statusCode: number, contentType: str
 }
 
 function sendError(response: ServerResponse, error: unknown): void {
-  const statusCode = error instanceof HttpError || error instanceof CapabilityNotFoundError || error instanceof CapabilityValidationError ? error.statusCode : 500;
+  const statusCode = error instanceof HttpError || error instanceof AgentHttpError || error instanceof CapabilityNotFoundError || error instanceof CapabilityValidationError ? error.statusCode : 500;
   const message = error instanceof Error ? error.message : "Internal server error.";
 
   sendJson(response, statusCode, {
@@ -514,27 +514,20 @@ class BenchLocalAgentServer {
       sendJson(response, readRoute.statusCode, readRoute.payload);
       return;
     }
-
-
-    if (request.method === "POST" && segments.length === 1 && segments[0] === "providers") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["id", "kind", "name", "enabled", "base_url", "api_key", "api_key_env"]);
-      sendJson(response, 201, await writeCapabilities.createProvider(body as BenchLocalAgentCreateProviderRequest));
+    const writeRoute = await routeProviderModelWriteAgentHttp(
+      request.method,
+      segments,
+      writeCapabilities,
+      () => readJsonRequest(request)
+    );
+    if (writeRoute) {
+      sendJson(response, writeRoute.statusCode, writeRoute.payload);
       return;
     }
 
-    if (segments[0] === "providers" && segments.length >= 2) {
-      await this.routeProviderCommand(request, response, segments);
-      return;
-    }
 
 
-    if (request.method === "POST" && segments.length === 1 && segments[0] === "models") {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["id", "provider", "model", "label", "group", "enabled"]);
-      sendJson(response, 201, await writeCapabilities.createModel(body as BenchLocalAgentCreateModelRequest));
-      return;
-    }
+
 
 
     if (request.method === "POST" && segments.length === 3 && segments[0] === "models" && segments[1] === "availability" && segments[2] === "refresh") {
@@ -544,10 +537,6 @@ class BenchLocalAgentServer {
       return;
     }
 
-    if (segments[0] === "models" && segments.length >= 2) {
-      await this.routeModelCommand(request, response, segments);
-      return;
-    }
 
     if (segments[0] === "workspaces" && segments.length === 3 && segments[2] === "tabs" && request.method === "POST") {
       const body = await readJsonRequest(request);
@@ -558,57 +547,6 @@ class BenchLocalAgentServer {
 
     if (segments[0] === "tabs" && segments.length >= 2) {
       await this.routeTabCommand(request, response, segments);
-      return;
-    }
-
-    throw new HttpError(404, "Unknown endpoint.");
-  }
-
-  private async routeProviderCommand(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
-    const providerId = segments[1];
-    const writeCapabilities = this.createWriteCapabilities();
-
-
-    if (request.method === "PATCH" && segments.length === 2) {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["kind", "name", "enabled", "base_url", "api_key", "api_key_env"]);
-      sendJson(response, 200, await writeCapabilities.updateProvider(providerId, body as BenchLocalAgentPatchProviderRequest));
-      return;
-    }
-
-    if (request.method === "DELETE" && segments.length === 2) {
-      sendJson(response, 200, await writeCapabilities.deleteProvider(providerId));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 3 && segments[2] === "duplicate") {
-      sendJson(response, 201, await writeCapabilities.duplicateProvider(providerId));
-      return;
-    }
-
-
-    throw new HttpError(404, "Unknown endpoint.");
-  }
-
-  private async routeModelCommand(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
-    const modelId = segments[1];
-
-
-    const writeCapabilities = this.createWriteCapabilities();
-    if (request.method === "PATCH" && segments.length === 2) {
-      const body = await readJsonRequest(request);
-      assertOnlyKeys(body, ["id", "provider", "model", "label", "group", "enabled"]);
-      sendJson(response, 200, await writeCapabilities.updateModel(modelId, body as BenchLocalAgentPatchModelRequest));
-      return;
-    }
-
-    if (request.method === "DELETE" && segments.length === 2) {
-      sendJson(response, 200, await writeCapabilities.deleteModel(modelId));
-      return;
-    }
-
-    if (request.method === "POST" && segments.length === 3 && segments[2] === "duplicate") {
-      sendJson(response, 201, await writeCapabilities.duplicateModel(modelId));
       return;
     }
 
