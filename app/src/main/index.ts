@@ -3,7 +3,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { getBenchLocalHome, loadOrCreateConfig } from "@core";
 import { loadAppMetadata } from "./app-metadata";
-import { APP_OPEN_ABOUT_CHANNEL, APP_OPEN_SETTINGS_CHANNEL, registerIpcHandlers, stopActiveBenchPackRunsForShutdown } from "./ipc";
+import { IPC_CHANNELS } from "@/shared/ipc-contract";
+import { sendIpcEvent } from "./ipc-helpers";
+import { registerIpcHandlers, stopActiveBenchPackRunsForShutdown } from "./ipc";
 import { loadAvailableTheme } from "./themes";
 import { checkForAppUpdatesInteractively, initializeAppUpdater } from "./updater";
 import { agentServer } from "./agent-server";
@@ -137,12 +139,12 @@ function buildApplicationMenu(appName: string): void {
     }
 
     const target = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-    target?.webContents.send(APP_OPEN_ABOUT_CHANNEL);
+    if (target) sendIpcEvent(target.webContents, IPC_CHANNELS.app.openAbout);
   };
 
   const openSettings = () => {
     const target = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-    target?.webContents.send(APP_OPEN_SETTINGS_CHANNEL);
+    if (target) sendIpcEvent(target.webContents, IPC_CHANNELS.app.openSettings);
   };
 
   const checkForUpdates = () => {

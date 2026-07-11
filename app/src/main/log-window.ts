@@ -1,9 +1,8 @@
 import { BrowserWindow } from "electron";
 import path from "node:path";
 import type { DetachedLogsState } from "@/shared/desktop-api";
-
-export const DETACHED_LOGS_STATE_CHANNEL = "benchlocal:logs:state";
-export const DETACHED_LOGS_CLOSED_CHANNEL = "benchlocal:logs:closed";
+import { IPC_CHANNELS } from "@/shared/ipc-contract";
+import { sendIpcEvent } from "./ipc-helpers";
 
 let detachedLogsWindow: BrowserWindow | null = null;
 let latestDetachedLogsState: DetachedLogsState | null = null;
@@ -22,7 +21,7 @@ function broadcastWindowClosed(): void {
       continue;
     }
 
-    window.webContents.send(DETACHED_LOGS_CLOSED_CHANNEL);
+    sendIpcEvent(window.webContents, IPC_CHANNELS.logs.closed);
   }
 }
 
@@ -78,7 +77,7 @@ export async function openDetachedLogsWindow(preloadPath: string): Promise<void>
 
   detachedLogsWindow.webContents.on("did-finish-load", () => {
     if (latestDetachedLogsState) {
-      detachedLogsWindow?.webContents.send(DETACHED_LOGS_STATE_CHANNEL, latestDetachedLogsState);
+      if (detachedLogsWindow) sendIpcEvent(detachedLogsWindow.webContents, IPC_CHANNELS.logs.state, latestDetachedLogsState);
     }
   });
 
@@ -113,5 +112,5 @@ export function publishDetachedLogsState(state: DetachedLogsState): void {
   }
 
   detachedLogsWindow.setTitle(buildDetachedLogsWindowTitle(state));
-  detachedLogsWindow.webContents.send(DETACHED_LOGS_STATE_CHANNEL, state);
+  sendIpcEvent(detachedLogsWindow.webContents, IPC_CHANNELS.logs.state, state);
 }

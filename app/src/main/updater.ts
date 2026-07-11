@@ -1,8 +1,8 @@
 import { app, BrowserWindow, dialog } from "electron";
 import electronUpdater, { type AppUpdater, type ProgressInfo, type UpdateDownloadedEvent, type UpdateInfo } from "electron-updater";
 import type { BenchLocalUpdateState } from "@/shared/desktop-api";
-
-export const APP_UPDATE_STATE_CHANNEL = "benchlocal:updates:state";
+import { IPC_CHANNELS } from "@/shared/ipc-contract";
+import { sendIpcEvent } from "./ipc-helpers";
 
 const AUTO_CHECK_DELAY_MS = 12_000;
 const AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -178,7 +178,7 @@ function serializeReleaseNotes(releaseNotes: unknown): string | undefined {
 function publishAppUpdateState(): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) {
-      window.webContents.send(APP_UPDATE_STATE_CHANNEL, appUpdateState);
+      sendIpcEvent(window.webContents, IPC_CHANNELS.updates.state, appUpdateState);
     }
   }
 }

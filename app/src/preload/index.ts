@@ -1,208 +1,91 @@
-import { contextBridge, ipcRenderer } from "electron";
-import type { BenchLocalConfig, BenchLocalWorkspaceState, GenerationRequest, ProgressEvent } from "@core";
-import type { BenchLocalDesktopApi, BenchPackVerifierPreparationEvent, DetachedLogsState } from "@/shared/desktop-api";
-
-const THEMES_LIST_CHANNEL = "benchlocal:themes:list";
-const THEMES_LOAD_CHANNEL = "benchlocal:themes:load";
-const APP_METADATA_CHANNEL = "benchlocal:app:metadata";
-const APP_OPEN_ABOUT_CHANNEL = "benchlocal:app:open-about";
-const APP_OPEN_SETTINGS_CHANNEL = "benchlocal:app:open-settings";
-const APP_UPDATE_GET_STATE_CHANNEL = "benchlocal:updates:get-state";
-const APP_UPDATE_CHECK_CHANNEL = "benchlocal:updates:check";
-const APP_UPDATE_INSTALL_CHANNEL = "benchlocal:updates:install";
-const APP_UPDATE_STATE_CHANNEL = "benchlocal:updates:state";
-const CONFIG_UPDATED_CHANNEL = "benchlocal:config:updated";
-const MODELS_DISCOVER_CHANNEL = "benchlocal:models:discover";
-const MODELS_AVAILABILITY_CHANNEL = "benchlocal:models:availability";
-const WORKSPACES_UPDATED_CHANNEL = "benchlocal:workspaces:updated";
-const BENCH_PACK_RUN_EVENT_CHANNEL = "benchlocal:benchpacks:run-event";
-const BENCH_PACK_MUTATION_PROGRESS_CHANNEL = "benchlocal:benchpacks:mutation-progress";
-const WEB_PACK_CHAT_CHANNEL = "benchlocal:webpacks:chat";
-const WEB_PACK_STREAM_CHAT_CHANNEL = "benchlocal:webpacks:stream-chat";
-const WEB_PACK_STREAM_EVENT_CHANNEL = "benchlocal:webpacks:stream-event";
-const WEB_PACK_HISTORY_SAVE_CHANNEL = "benchlocal:webpacks:history-save";
-const WEB_PACK_ARTIFACT_WRITE_CHANNEL = "benchlocal:webpacks:artifact-write";
-const VERIFIERS_PROGRESS_CHANNEL = "benchlocal:verifiers:progress";
-const DETACHED_LOGS_STATE_CHANNEL = "benchlocal:logs:state";
-const DETACHED_LOGS_CLOSED_CHANNEL = "benchlocal:logs:closed";
-const AGENT_STATE_CHANNEL = "benchlocal:agent:state";
-const AGENT_GET_STATE_CHANNEL = "benchlocal:agent:get-state";
-const AGENT_CONFIGURE_CHANNEL = "benchlocal:agent:configure";
-const AGENT_REGENERATE_TOKEN_CHANNEL = "benchlocal:agent:regenerate-token";
+import { contextBridge } from "electron";
+import type { BenchLocalDesktopApi } from "@/shared/desktop-api";
+import { IPC_CHANNELS } from "@/shared/ipc-contract";
+import { invokeIpc, onIpcEvent, sendIpcMessage } from "./ipc-helpers";
 
 const api: BenchLocalDesktopApi = {
   app: {
-    metadata: () => ipcRenderer.invoke(APP_METADATA_CHANNEL),
-    onOpenAbout: (listener) => {
-      const wrapped = () => {
-        listener();
-      };
-
-      ipcRenderer.on(APP_OPEN_ABOUT_CHANNEL, wrapped);
-      return () => ipcRenderer.removeListener(APP_OPEN_ABOUT_CHANNEL, wrapped);
-    },
-    onOpenSettings: (listener) => {
-      const wrapped = () => {
-        listener();
-      };
-
-      ipcRenderer.on(APP_OPEN_SETTINGS_CHANNEL, wrapped);
-      return () => ipcRenderer.removeListener(APP_OPEN_SETTINGS_CHANNEL, wrapped);
-    }
+    metadata: () => invokeIpc(IPC_CHANNELS.app.metadata),
+    onOpenAbout: (listener) => onIpcEvent(IPC_CHANNELS.app.openAbout, listener),
+    onOpenSettings: (listener) => onIpcEvent(IPC_CHANNELS.app.openSettings, listener)
   },
   updates: {
-    state: () => ipcRenderer.invoke(APP_UPDATE_GET_STATE_CHANNEL),
-    check: () => ipcRenderer.invoke(APP_UPDATE_CHECK_CHANNEL),
-    install: () => ipcRenderer.invoke(APP_UPDATE_INSTALL_CHANNEL),
-    onState: (listener) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]) => {
-        listener(state);
-      };
-
-      ipcRenderer.on(APP_UPDATE_STATE_CHANNEL, wrapped);
-      return () => ipcRenderer.removeListener(APP_UPDATE_STATE_CHANNEL, wrapped);
-    }
+    state: () => invokeIpc(IPC_CHANNELS.updates.getState),
+    check: () => invokeIpc(IPC_CHANNELS.updates.check),
+    install: () => invokeIpc(IPC_CHANNELS.updates.install),
+    onState: (listener) => onIpcEvent(IPC_CHANNELS.updates.state, listener)
   },
   config: {
-    load: () => ipcRenderer.invoke("benchlocal:config:load"),
-    save: (config: BenchLocalConfig) => ipcRenderer.invoke("benchlocal:config:save", config),
-    onUpdated: (listener) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]) => {
-        listener(payload);
-      };
-
-      ipcRenderer.on(CONFIG_UPDATED_CHANNEL, wrapped);
-      return () => ipcRenderer.removeListener(CONFIG_UPDATED_CHANNEL, wrapped);
-    }
+    load: () => invokeIpc(IPC_CHANNELS.config.load),
+    save: (config) => invokeIpc(IPC_CHANNELS.config.save, config),
+    onUpdated: (listener) => onIpcEvent(IPC_CHANNELS.config.updated, listener)
   },
   agent: {
-    state: () => ipcRenderer.invoke(AGENT_GET_STATE_CHANNEL),
-    configure: (input: { enabled: boolean; access?: "localhost" | "local_network"; port?: number }) =>
-      ipcRenderer.invoke(AGENT_CONFIGURE_CHANNEL, input),
-    regenerateToken: () => ipcRenderer.invoke(AGENT_REGENERATE_TOKEN_CHANNEL),
-    onState: (listener) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]) => {
-        listener(state);
-      };
-
-      ipcRenderer.on(AGENT_STATE_CHANNEL, wrapped);
-      return () => ipcRenderer.removeListener(AGENT_STATE_CHANNEL, wrapped);
-    }
+    state: () => invokeIpc(IPC_CHANNELS.agent.getState),
+    configure: (input) => invokeIpc(IPC_CHANNELS.agent.configure, input),
+    regenerateToken: () => invokeIpc(IPC_CHANNELS.agent.regenerateToken),
+    onState: (listener) => onIpcEvent(IPC_CHANNELS.agent.state, listener)
   },
   models: {
-    discover: (input: { provider: BenchLocalConfig["providers"][string] }) =>
-      ipcRenderer.invoke(MODELS_DISCOVER_CHANNEL, input),
-    availability: (input: { config: BenchLocalConfig; modelIds?: string[] }) =>
-      ipcRenderer.invoke(MODELS_AVAILABILITY_CHANNEL, input)
+    discover: (input) => invokeIpc(IPC_CHANNELS.models.discover, input),
+    availability: (input) => invokeIpc(IPC_CHANNELS.models.availability, input)
   },
   themes: {
-    list: () => ipcRenderer.invoke(THEMES_LIST_CHANNEL),
-    load: (input: { themeId: string }) => ipcRenderer.invoke(THEMES_LOAD_CHANNEL, input)
+    list: () => invokeIpc(IPC_CHANNELS.themes.list),
+    load: (input) => invokeIpc(IPC_CHANNELS.themes.load, input)
   },
   workspaces: {
-    load: () => ipcRenderer.invoke("benchlocal:workspaces:load"),
-    save: (state: BenchLocalWorkspaceState) => ipcRenderer.invoke("benchlocal:workspaces:save", state),
-    export: (input: { workspaceId: string; state: BenchLocalWorkspaceState }) =>
-      ipcRenderer.invoke("benchlocal:workspaces:export", input),
-    import: () => ipcRenderer.invoke("benchlocal:workspaces:import"),
-    onUpdated: (listener) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]) => {
-        listener(payload);
-      };
-
-      ipcRenderer.on(WORKSPACES_UPDATED_CHANNEL, wrapped);
-      return () => ipcRenderer.removeListener(WORKSPACES_UPDATED_CHANNEL, wrapped);
-    }
+    load: () => invokeIpc(IPC_CHANNELS.workspaces.load),
+    save: (state) => invokeIpc(IPC_CHANNELS.workspaces.save, state),
+    export: (input) => invokeIpc(IPC_CHANNELS.workspaces.export, input),
+    import: () => invokeIpc(IPC_CHANNELS.workspaces.import),
+    onUpdated: (listener) => onIpcEvent(IPC_CHANNELS.workspaces.updated, listener)
   },
   benchPacks: {
-    list: () => ipcRenderer.invoke("benchlocal:benchpacks:list"),
-    registry: () => ipcRenderer.invoke("benchlocal:benchpacks:registry"),
-    install: (input: { benchPackId: string }) => ipcRenderer.invoke("benchlocal:benchpacks:install", input),
-    installFromUrl: (input: { url: string }) => ipcRenderer.invoke("benchlocal:benchpacks:install-from-url", input),
-    update: (input: { benchPackId: string }) => ipcRenderer.invoke("benchlocal:benchpacks:update", input),
-    uninstall: (input: { benchPackId: string }) => ipcRenderer.invoke("benchlocal:benchpacks:uninstall", input),
-    onMutationProgress: (listener) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]) => {
-        listener(payload);
-      };
-
-      ipcRenderer.on(BENCH_PACK_MUTATION_PROGRESS_CHANNEL, wrapped);
-      return () => ipcRenderer.removeListener(BENCH_PACK_MUTATION_PROGRESS_CHANNEL, wrapped);
-    },
-    activeRuns: () => ipcRenderer.invoke("benchlocal:benchpacks:active-runs"),
-    run: (input: { tabId: string; benchPackId: string; modelIds?: string[]; executionMode?: "serial" | "serial_by_model" | "parallel_by_model" | "parallel_by_test_case" | "full_parallel"; runsPerTest?: number; generation?: GenerationRequest }) =>
-      ipcRenderer.invoke("benchlocal:benchpacks:run", input),
-    retryScenario: (input: { tabId: string; benchPackId: string; runId: string; scenarioId: string; modelId: string; runsPerTest?: number; generation?: GenerationRequest }) =>
-      ipcRenderer.invoke("benchlocal:benchpacks:retry-scenario", input),
-    resumeRun: (input: { tabId: string; benchPackId: string; runId: string; executionMode?: "serial" | "serial_by_model" | "parallel_by_model" | "parallel_by_test_case" | "full_parallel"; runsPerTest?: number; generation?: GenerationRequest }) =>
-      ipcRenderer.invoke("benchlocal:benchpacks:resume-run", input),
-    stop: (input: { tabId: string }) => ipcRenderer.invoke("benchlocal:benchpacks:stop", input),
-    history: (input: { benchPackId: string }) => ipcRenderer.invoke("benchlocal:benchpacks:history", input),
-    loadHistory: (input: { benchPackId: string; runId: string }) => ipcRenderer.invoke("benchlocal:benchpacks:history-load", input),
-    clearHistory: (input: { benchPackId: string }) => ipcRenderer.invoke("benchlocal:benchpacks:history-clear", input),
-    deleteHistory: (input: { benchPackId: string; runIds: string[] }) =>
-      ipcRenderer.invoke("benchlocal:benchpacks:history-delete", input),
-    onRunEvent: (listener: (payload: { tabId: string; benchPackId?: string; event: ProgressEvent }) => void) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, payload: { tabId: string; benchPackId?: string; event: ProgressEvent }) => {
-        listener(payload);
-      };
-
-      ipcRenderer.on(BENCH_PACK_RUN_EVENT_CHANNEL, wrapped);
-      return () => ipcRenderer.removeListener(BENCH_PACK_RUN_EVENT_CHANNEL, wrapped);
-    }
+    list: () => invokeIpc(IPC_CHANNELS.benchPacks.list),
+    registry: () => invokeIpc(IPC_CHANNELS.benchPacks.registry),
+    install: (input) => invokeIpc(IPC_CHANNELS.benchPacks.install, input),
+    installFromUrl: (input) => invokeIpc(IPC_CHANNELS.benchPacks.installFromUrl, input),
+    update: (input) => invokeIpc(IPC_CHANNELS.benchPacks.update, input),
+    uninstall: (input) => invokeIpc(IPC_CHANNELS.benchPacks.uninstall, input),
+    onMutationProgress: (listener) => onIpcEvent(IPC_CHANNELS.benchPacks.mutationProgress, listener),
+    activeRuns: () => invokeIpc(IPC_CHANNELS.benchPacks.activeRuns),
+    run: (input) => invokeIpc(IPC_CHANNELS.benchPacks.run, input),
+    retryScenario: (input) => invokeIpc(IPC_CHANNELS.benchPacks.retryScenario, input),
+    resumeRun: (input) => invokeIpc(IPC_CHANNELS.benchPacks.resumeRun, input),
+    stop: (input) => invokeIpc(IPC_CHANNELS.benchPacks.stop, input),
+    history: (input) => invokeIpc(IPC_CHANNELS.benchPacks.history, input),
+    loadHistory: (input) => invokeIpc(IPC_CHANNELS.benchPacks.loadHistory, input),
+    clearHistory: (input) => invokeIpc(IPC_CHANNELS.benchPacks.clearHistory, input),
+    deleteHistory: (input) => invokeIpc(IPC_CHANNELS.benchPacks.deleteHistory, input),
+    onRunEvent: (listener) => onIpcEvent(IPC_CHANNELS.benchPacks.runEvent, listener)
   },
   webPacks: {
-    chat: (input) => ipcRenderer.invoke(WEB_PACK_CHAT_CHANNEL, input),
+    chat: (input) => invokeIpc(IPC_CHANNELS.webPacks.chat, input),
     streamChat: (input, listener) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]) => {
-        if (payload.streamId === input.streamId) {
-          listener(payload);
-        }
-      };
-
-      ipcRenderer.on(WEB_PACK_STREAM_EVENT_CHANNEL, wrapped);
-      ipcRenderer.send(WEB_PACK_STREAM_CHAT_CHANNEL, input);
-      return () => ipcRenderer.removeListener(WEB_PACK_STREAM_EVENT_CHANNEL, wrapped);
+      const unsubscribe = onIpcEvent(IPC_CHANNELS.webPacks.streamEvent, (payload) => {
+        if (payload.streamId === input.streamId) listener(payload);
+      });
+      sendIpcMessage(IPC_CHANNELS.webPacks.streamChat, input);
+      return unsubscribe;
     },
-    saveHistory: (input) => ipcRenderer.invoke(WEB_PACK_HISTORY_SAVE_CHANNEL, input),
-    writeArtifact: (input) => ipcRenderer.invoke(WEB_PACK_ARTIFACT_WRITE_CHANNEL, input)
+    saveHistory: (input) => invokeIpc(IPC_CHANNELS.webPacks.saveHistory, input),
+    writeArtifact: (input) => invokeIpc(IPC_CHANNELS.webPacks.writeArtifact, input)
   },
   verifiers: {
-    list: () => ipcRenderer.invoke("benchlocal:verifiers:list"),
-    start: (input: { benchPackId: string }) => ipcRenderer.invoke("benchlocal:verifiers:start", input),
-    stop: (input: { benchPackId: string }) => ipcRenderer.invoke("benchlocal:verifiers:stop", input),
-    cancelStart: (input: { benchPackId: string }) => ipcRenderer.invoke("benchlocal:verifiers:cancel-start", input),
-    deleteImage: (input: { benchPackId: string; verifierId: string }) =>
-      ipcRenderer.invoke("benchlocal:verifiers:delete-image", input),
-    onProgress: (listener: (payload: { benchPackId: string; event: BenchPackVerifierPreparationEvent }) => void) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, payload: { benchPackId: string; event: BenchPackVerifierPreparationEvent }) => {
-        listener(payload);
-      };
-
-      ipcRenderer.on(VERIFIERS_PROGRESS_CHANNEL, wrapped);
-      return () => ipcRenderer.removeListener(VERIFIERS_PROGRESS_CHANNEL, wrapped);
-    }
+    list: () => invokeIpc(IPC_CHANNELS.verifiers.list),
+    start: (input) => invokeIpc(IPC_CHANNELS.verifiers.start, input),
+    stop: (input) => invokeIpc(IPC_CHANNELS.verifiers.stop, input),
+    cancelStart: (input) => invokeIpc(IPC_CHANNELS.verifiers.cancelStart, input),
+    deleteImage: (input) => invokeIpc(IPC_CHANNELS.verifiers.deleteImage, input),
+    onProgress: (listener) => onIpcEvent(IPC_CHANNELS.verifiers.progress, listener)
   },
   logs: {
-    openDetachedWindow: () => ipcRenderer.invoke("benchlocal:logs:open-detached"),
-    closeDetachedWindow: () => ipcRenderer.invoke("benchlocal:logs:close-detached"),
-    publishDetachedState: (state: DetachedLogsState) => ipcRenderer.invoke("benchlocal:logs:publish-state", state),
-    onDetachedState: (listener: (state: DetachedLogsState) => void) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, state: DetachedLogsState) => {
-        listener(state);
-      };
-
-      ipcRenderer.on(DETACHED_LOGS_STATE_CHANNEL, wrapped);
-      return () => ipcRenderer.removeListener(DETACHED_LOGS_STATE_CHANNEL, wrapped);
-    },
-    onDetachedWindowClosed: (listener: () => void) => {
-      const wrapped = () => {
-        listener();
-      };
-
-      ipcRenderer.on(DETACHED_LOGS_CLOSED_CHANNEL, wrapped);
-      return () => ipcRenderer.removeListener(DETACHED_LOGS_CLOSED_CHANNEL, wrapped);
-    }
+    openDetachedWindow: () => invokeIpc(IPC_CHANNELS.logs.openDetached),
+    closeDetachedWindow: () => invokeIpc(IPC_CHANNELS.logs.closeDetached),
+    publishDetachedState: (state) => invokeIpc(IPC_CHANNELS.logs.publishState, state),
+    onDetachedState: (listener) => onIpcEvent(IPC_CHANNELS.logs.state, listener),
+    onDetachedWindowClosed: (listener) => onIpcEvent(IPC_CHANNELS.logs.closed, listener)
   }
 };
 

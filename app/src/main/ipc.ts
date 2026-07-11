@@ -1,5 +1,5 @@
 import { promises as fs } from "node:fs";
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import { BrowserWindow, dialog } from "electron";
 import type {
   BenchLocalAgentEvent,
   BenchLocalChatRequest,
@@ -12,6 +12,12 @@ import type {
   WebBenchPackHistoryPayload
 } from "@core";
 import type { DetachedLogsState } from "@/shared/desktop-api";
+import {
+  IPC_CHANNELS,
+  type IpcEventChannel,
+  type IpcEventPayload
+} from "@/shared/ipc-contract";
+import { registerIpcHandler, registerIpcMessageHandler, sendIpcEvent } from "./ipc-helpers";
 import { closeDetachedLogsWindow, openDetachedLogsWindow, publishDetachedLogsState } from "./log-window";
 import { loadAppMetadata } from "./app-metadata";
 import { listAvailableThemes, loadAvailableTheme } from "./themes";
@@ -19,65 +25,14 @@ import { checkForAppUpdates, getAppUpdateState, installDownloadedAppUpdate } fro
 import { benchLocalController } from "./controller";
 import { agentServer } from "./agent-server";
 
-const CONFIG_LOAD_CHANNEL = "benchlocal:config:load";
-const CONFIG_SAVE_CHANNEL = "benchlocal:config:save";
-const CONFIG_UPDATED_CHANNEL = "benchlocal:config:updated";
-const APP_METADATA_CHANNEL = "benchlocal:app:metadata";
-export const APP_OPEN_ABOUT_CHANNEL = "benchlocal:app:open-about";
-export const APP_OPEN_SETTINGS_CHANNEL = "benchlocal:app:open-settings";
-const APP_UPDATE_GET_STATE_CHANNEL = "benchlocal:updates:get-state";
-const APP_UPDATE_CHECK_CHANNEL = "benchlocal:updates:check";
-const APP_UPDATE_INSTALL_CHANNEL = "benchlocal:updates:install";
-const MODELS_DISCOVER_CHANNEL = "benchlocal:models:discover";
-const MODELS_AVAILABILITY_CHANNEL = "benchlocal:models:availability";
-const THEMES_LIST_CHANNEL = "benchlocal:themes:list";
-const THEMES_LOAD_CHANNEL = "benchlocal:themes:load";
-const WORKSPACES_LOAD_CHANNEL = "benchlocal:workspaces:load";
-const WORKSPACES_SAVE_CHANNEL = "benchlocal:workspaces:save";
-const WORKSPACES_UPDATED_CHANNEL = "benchlocal:workspaces:updated";
-const WORKSPACES_EXPORT_CHANNEL = "benchlocal:workspaces:export";
-const WORKSPACES_IMPORT_CHANNEL = "benchlocal:workspaces:import";
-const BENCH_PACK_LIST_CHANNEL = "benchlocal:benchpacks:list";
-const BENCH_PACK_REGISTRY_CHANNEL = "benchlocal:benchpacks:registry";
-const BENCH_PACK_INSTALL_CHANNEL = "benchlocal:benchpacks:install";
-const BENCH_PACK_INSTALL_FROM_URL_CHANNEL = "benchlocal:benchpacks:install-from-url";
-const BENCH_PACK_UPDATE_CHANNEL = "benchlocal:benchpacks:update";
-const BENCH_PACK_UNINSTALL_CHANNEL = "benchlocal:benchpacks:uninstall";
-const BENCH_PACK_MUTATION_PROGRESS_CHANNEL = "benchlocal:benchpacks:mutation-progress";
-const BENCH_PACK_ACTIVE_RUNS_CHANNEL = "benchlocal:benchpacks:active-runs";
-const BENCH_PACK_RUN_CHANNEL = "benchlocal:benchpacks:run";
-const BENCH_PACK_RETRY_SCENARIO_CHANNEL = "benchlocal:benchpacks:retry-scenario";
-const BENCH_PACK_RESUME_RUN_CHANNEL = "benchlocal:benchpacks:resume-run";
-const BENCH_PACK_STOP_CHANNEL = "benchlocal:benchpacks:stop";
-const BENCH_PACK_HISTORY_CHANNEL = "benchlocal:benchpacks:history";
-const BENCH_PACK_HISTORY_LOAD_CHANNEL = "benchlocal:benchpacks:history-load";
-const BENCH_PACK_HISTORY_CLEAR_CHANNEL = "benchlocal:benchpacks:history-clear";
-const BENCH_PACK_HISTORY_DELETE_CHANNEL = "benchlocal:benchpacks:history-delete";
-const BENCH_PACK_RUN_EVENT_CHANNEL = "benchlocal:benchpacks:run-event";
-const WEB_PACK_CHAT_CHANNEL = "benchlocal:webpacks:chat";
-const WEB_PACK_STREAM_CHAT_CHANNEL = "benchlocal:webpacks:stream-chat";
-const WEB_PACK_STREAM_EVENT_CHANNEL = "benchlocal:webpacks:stream-event";
-const WEB_PACK_HISTORY_SAVE_CHANNEL = "benchlocal:webpacks:history-save";
-const WEB_PACK_ARTIFACT_WRITE_CHANNEL = "benchlocal:webpacks:artifact-write";
-const VERIFIERS_LIST_CHANNEL = "benchlocal:verifiers:list";
-const VERIFIERS_START_CHANNEL = "benchlocal:verifiers:start";
-const VERIFIERS_STOP_CHANNEL = "benchlocal:verifiers:stop";
-const VERIFIERS_CANCEL_START_CHANNEL = "benchlocal:verifiers:cancel-start";
-const VERIFIERS_DELETE_IMAGE_CHANNEL = "benchlocal:verifiers:delete-image";
-const VERIFIERS_PROGRESS_CHANNEL = "benchlocal:verifiers:progress";
-const LOGS_OPEN_DETACHED_CHANNEL = "benchlocal:logs:open-detached";
-const LOGS_CLOSE_DETACHED_CHANNEL = "benchlocal:logs:close-detached";
-const LOGS_PUBLISH_STATE_CHANNEL = "benchlocal:logs:publish-state";
-const AGENT_STATE_CHANNEL = "benchlocal:agent:state";
-const AGENT_GET_STATE_CHANNEL = "benchlocal:agent:get-state";
-const AGENT_CONFIGURE_CHANNEL = "benchlocal:agent:configure";
-const AGENT_REGENERATE_TOKEN_CHANNEL = "benchlocal:agent:regenerate-token";
-
 export function stopActiveBenchPackRunsForShutdown(options?: { timeoutMs?: number; intervalMs?: number }): Promise<void> {
   return benchLocalController.stopActiveBenchPackRunsForShutdown(options);
 }
 
-function sendToAllWindows(channel: string, payload: unknown): void {
+function sendToAllWindows<TChannel extends IpcEventChannel>(
+  channel: TChannel,
+  payload: IpcEventPayload<TChannel>
+): void {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send(channel, payload);
   }
@@ -86,27 +41,27 @@ function sendToAllWindows(channel: string, payload: unknown): void {
 function forwardControllerEvent(event: BenchLocalAgentEvent): void {
   if (event.type === "benchpack.run.event") {
     const payload = event.payload as { tabId: string; benchPackId: string; event: ProgressEvent };
-    sendToAllWindows(BENCH_PACK_RUN_EVENT_CHANNEL, payload);
+    sendToAllWindows(IPC_CHANNELS.benchPacks.runEvent, payload);
     return;
   }
 
   if (event.type === "verifier.event") {
-    sendToAllWindows(VERIFIERS_PROGRESS_CHANNEL, event.payload);
+    sendToAllWindows(IPC_CHANNELS.verifiers.progress, event.payload as IpcEventPayload<typeof IPC_CHANNELS.verifiers.progress>);
     return;
   }
 
   if (event.type === "config.updated") {
-    sendToAllWindows(CONFIG_UPDATED_CHANNEL, event.payload);
+    sendToAllWindows(IPC_CHANNELS.config.updated, event.payload as IpcEventPayload<typeof IPC_CHANNELS.config.updated>);
     return;
   }
 
   if (event.type === "workspace.updated") {
-    sendToAllWindows(WORKSPACES_UPDATED_CHANNEL, event.payload);
+    sendToAllWindows(IPC_CHANNELS.workspaces.updated, event.payload as IpcEventPayload<typeof IPC_CHANNELS.workspaces.updated>);
     return;
   }
 
   if (event.type === "agent.state.updated") {
-    sendToAllWindows(AGENT_STATE_CHANNEL, event.payload);
+    sendToAllWindows(IPC_CHANNELS.agent.state, event.payload as IpcEventPayload<typeof IPC_CHANNELS.agent.state>);
   }
 }
 
@@ -114,56 +69,56 @@ export function registerIpcHandlers(): void {
   const preloadPath = new URL("../preload/index.js", import.meta.url).pathname;
   benchLocalController.onAgentEvent(forwardControllerEvent);
 
-  ipcMain.handle(CONFIG_LOAD_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.config.load, async () => {
     return benchLocalController.loadConfig();
   });
 
-  ipcMain.handle(CONFIG_SAVE_CHANNEL, async (_event, config: BenchLocalConfig) => {
+  registerIpcHandler(IPC_CHANNELS.config.save, async (_event, config: BenchLocalConfig) => {
     return benchLocalController.saveConfig(config);
   });
 
-  ipcMain.handle(APP_METADATA_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.app.metadata, async () => {
     return loadAppMetadata();
   });
 
-  ipcMain.handle(APP_UPDATE_GET_STATE_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.updates.getState, async () => {
     return getAppUpdateState();
   });
 
-  ipcMain.handle(APP_UPDATE_CHECK_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.updates.check, async () => {
     return checkForAppUpdates();
   });
 
-  ipcMain.handle(APP_UPDATE_INSTALL_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.updates.install, async () => {
     return installDownloadedAppUpdate();
   });
 
-  ipcMain.handle(MODELS_DISCOVER_CHANNEL, async (_event, input: { provider: BenchLocalProviderConfig }) => {
+  registerIpcHandler(IPC_CHANNELS.models.discover, async (_event, input: { provider: BenchLocalProviderConfig }) => {
     return benchLocalController.discoverProviderModels(input.provider);
   });
 
-  ipcMain.handle(MODELS_AVAILABILITY_CHANNEL, async (_event, input: { config: BenchLocalConfig; modelIds?: string[] }) => {
+  registerIpcHandler(IPC_CHANNELS.models.availability, async (_event, input: { config: BenchLocalConfig; modelIds?: string[] }) => {
     return benchLocalController.checkModelAvailability(input);
   });
 
-  ipcMain.handle(THEMES_LIST_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.themes.list, async () => {
     return listAvailableThemes();
   });
 
-  ipcMain.handle(THEMES_LOAD_CHANNEL, async (_event, input: { themeId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.themes.load, async (_event, input: { themeId: string }) => {
     return loadAvailableTheme(input.themeId);
   });
 
-  ipcMain.handle(WORKSPACES_LOAD_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.workspaces.load, async () => {
     return benchLocalController.loadWorkspaceState();
   });
 
-  ipcMain.handle(WORKSPACES_SAVE_CHANNEL, async (_event, state: BenchLocalWorkspaceState) => {
+  registerIpcHandler(IPC_CHANNELS.workspaces.save, async (_event, state: BenchLocalWorkspaceState) => {
     return benchLocalController.saveWorkspaceState(state);
   });
 
-  ipcMain.handle(
-    WORKSPACES_EXPORT_CHANNEL,
+  registerIpcHandler(
+    IPC_CHANNELS.workspaces.export,
     async (_event, input: { workspaceId: string; state: BenchLocalWorkspaceState }) => {
       const workspace = input.state.workspaces[input.workspaceId];
 
@@ -207,7 +162,7 @@ export function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle(WORKSPACES_IMPORT_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.workspaces.import, async () => {
     const result = await dialog.showOpenDialog({
       title: "Import Workspace",
       properties: ["openFile"],
@@ -235,64 +190,64 @@ export function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle(BENCH_PACK_LIST_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.list, async () => {
     return benchLocalController.listBenchPacks();
   });
 
-  ipcMain.handle(BENCH_PACK_REGISTRY_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.registry, async () => {
     return benchLocalController.loadBenchPackRegistry();
   });
 
-  ipcMain.handle(BENCH_PACK_INSTALL_CHANNEL, async (_event, input: { benchPackId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.install, async (_event, input: { benchPackId: string }) => {
     return benchLocalController.installBenchPack(input.benchPackId, (progress) => {
-      _event.sender.send(BENCH_PACK_MUTATION_PROGRESS_CHANNEL, progress);
+      sendIpcEvent(_event.sender, IPC_CHANNELS.benchPacks.mutationProgress, progress);
     });
   });
 
-  ipcMain.handle(BENCH_PACK_INSTALL_FROM_URL_CHANNEL, async (_event, input: { url: string }) => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.installFromUrl, async (_event, input: { url: string }) => {
     return benchLocalController.installBenchPackFromUrl(input.url, (progress) => {
-      _event.sender.send(BENCH_PACK_MUTATION_PROGRESS_CHANNEL, progress);
+      sendIpcEvent(_event.sender, IPC_CHANNELS.benchPacks.mutationProgress, progress);
     });
   });
 
-  ipcMain.handle(BENCH_PACK_UPDATE_CHANNEL, async (_event, input: { benchPackId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.update, async (_event, input: { benchPackId: string }) => {
     return benchLocalController.updateBenchPack(input.benchPackId, (progress) => {
-      _event.sender.send(BENCH_PACK_MUTATION_PROGRESS_CHANNEL, progress);
+      sendIpcEvent(_event.sender, IPC_CHANNELS.benchPacks.mutationProgress, progress);
     });
   });
 
-  ipcMain.handle(BENCH_PACK_UNINSTALL_CHANNEL, async (_event, input: { benchPackId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.uninstall, async (_event, input: { benchPackId: string }) => {
     return benchLocalController.uninstallBenchPack(input.benchPackId, (progress) => {
-      _event.sender.send(BENCH_PACK_MUTATION_PROGRESS_CHANNEL, progress);
+      sendIpcEvent(_event.sender, IPC_CHANNELS.benchPacks.mutationProgress, progress);
     });
   });
 
-  ipcMain.handle(BENCH_PACK_ACTIVE_RUNS_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.activeRuns, async () => {
     return benchLocalController.listActiveRuns();
   });
 
-  ipcMain.handle(BENCH_PACK_HISTORY_CHANNEL, async (_event, input: { benchPackId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.history, async (_event, input: { benchPackId: string }) => {
     return benchLocalController.listRunHistory(input.benchPackId);
   });
 
-  ipcMain.handle(BENCH_PACK_HISTORY_LOAD_CHANNEL, async (_event, input: { benchPackId: string; runId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.loadHistory, async (_event, input: { benchPackId: string; runId: string }) => {
     return benchLocalController.loadRunHistory(input.benchPackId, input.runId);
   });
 
-  ipcMain.handle(BENCH_PACK_HISTORY_CLEAR_CHANNEL, async (_event, input: { benchPackId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.clearHistory, async (_event, input: { benchPackId: string }) => {
     return benchLocalController.clearRunHistory(input.benchPackId);
   });
 
-  ipcMain.handle(BENCH_PACK_HISTORY_DELETE_CHANNEL, async (_event, input: { benchPackId: string; runIds: string[] }) => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.deleteHistory, async (_event, input: { benchPackId: string; runIds: string[] }) => {
     return benchLocalController.deleteRunHistory(input.benchPackId, input.runIds);
   });
 
-  ipcMain.handle(WEB_PACK_CHAT_CHANNEL, async (_event, input: BenchLocalChatRequest) => {
+  registerIpcHandler(IPC_CHANNELS.webPacks.chat, async (_event, input: BenchLocalChatRequest) => {
     return benchLocalController.runWebPackChat(input);
   });
 
-  ipcMain.on(
-    WEB_PACK_STREAM_CHAT_CHANNEL,
+  registerIpcMessageHandler(
+    IPC_CHANNELS.webPacks.streamChat,
     (
       event,
       input: {
@@ -301,7 +256,7 @@ export function registerIpcHandlers(): void {
       }
     ) => {
       const sendStreamEvent = (streamEvent: BenchLocalChatStreamEvent, done = false) => {
-        event.sender.send(WEB_PACK_STREAM_EVENT_CHANNEL, {
+        sendIpcEvent(event.sender, IPC_CHANNELS.webPacks.streamEvent, {
           streamId: input.streamId,
           event: streamEvent,
           done
@@ -323,8 +278,8 @@ export function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle(
-    WEB_PACK_HISTORY_SAVE_CHANNEL,
+  registerIpcHandler(
+    IPC_CHANNELS.webPacks.saveHistory,
     async (
       _event,
       input: {
@@ -338,8 +293,8 @@ export function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle(
-    WEB_PACK_ARTIFACT_WRITE_CHANNEL,
+  registerIpcHandler(
+    IPC_CHANNELS.webPacks.writeArtifact,
     async (
       _event,
       input: {
@@ -359,41 +314,41 @@ export function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle(VERIFIERS_LIST_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.verifiers.list, async () => {
     return benchLocalController.listVerifiers();
   });
 
-  ipcMain.handle(VERIFIERS_START_CHANNEL, async (_event, input: { benchPackId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.verifiers.start, async (_event, input: { benchPackId: string }) => {
     return benchLocalController.startVerifier(input.benchPackId);
   });
 
-  ipcMain.handle(VERIFIERS_STOP_CHANNEL, async (_event, input: { benchPackId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.verifiers.stop, async (_event, input: { benchPackId: string }) => {
     return benchLocalController.stopVerifier(input.benchPackId);
   });
 
-  ipcMain.handle(VERIFIERS_CANCEL_START_CHANNEL, async (_event, input: { benchPackId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.verifiers.cancelStart, async (_event, input: { benchPackId: string }) => {
     return benchLocalController.cancelVerifierStart(input.benchPackId);
   });
 
-  ipcMain.handle(VERIFIERS_DELETE_IMAGE_CHANNEL, async (_event, input: { benchPackId: string; verifierId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.verifiers.deleteImage, async (_event, input: { benchPackId: string; verifierId: string }) => {
     return benchLocalController.deleteVerifierImage(input.benchPackId, input.verifierId);
   });
 
-  ipcMain.handle(LOGS_OPEN_DETACHED_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.logs.openDetached, async () => {
     await openDetachedLogsWindow(preloadPath);
     return { opened: true };
   });
 
-  ipcMain.handle(LOGS_CLOSE_DETACHED_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.logs.closeDetached, async () => {
     return { closed: closeDetachedLogsWindow() };
   });
 
-  ipcMain.handle(LOGS_PUBLISH_STATE_CHANNEL, async (_event, state: DetachedLogsState) => {
+  registerIpcHandler(IPC_CHANNELS.logs.publishState, async (_event, state: DetachedLogsState) => {
     publishDetachedLogsState(state);
   });
 
-  ipcMain.handle(
-    BENCH_PACK_RUN_CHANNEL,
+  registerIpcHandler(
+    IPC_CHANNELS.benchPacks.run,
     async (
       _event,
       input: {
@@ -409,8 +364,8 @@ export function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle(
-    BENCH_PACK_RETRY_SCENARIO_CHANNEL,
+  registerIpcHandler(
+    IPC_CHANNELS.benchPacks.retryScenario,
     async (
       _event,
       input: {
@@ -427,8 +382,8 @@ export function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle(
-    BENCH_PACK_RESUME_RUN_CHANNEL,
+  registerIpcHandler(
+    IPC_CHANNELS.benchPacks.resumeRun,
     async (
       _event,
       input: {
@@ -444,19 +399,19 @@ export function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle(BENCH_PACK_STOP_CHANNEL, async (_event, input: { tabId: string }) => {
+  registerIpcHandler(IPC_CHANNELS.benchPacks.stop, async (_event, input: { tabId: string }) => {
     return benchLocalController.stopRun(input.tabId);
   });
 
-  ipcMain.handle(AGENT_GET_STATE_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.agent.getState, async () => {
     return agentServer.getState();
   });
 
-  ipcMain.handle(AGENT_CONFIGURE_CHANNEL, async (_event, input: { enabled: boolean; port?: number }) => {
+  registerIpcHandler(IPC_CHANNELS.agent.configure, async (_event, input: { enabled: boolean; port?: number }) => {
     return agentServer.configure(input);
   });
 
-  ipcMain.handle(AGENT_REGENERATE_TOKEN_CHANNEL, async () => {
+  registerIpcHandler(IPC_CHANNELS.agent.regenerateToken, async () => {
     return agentServer.regenerateToken();
   });
 }

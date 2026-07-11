@@ -1,82 +1,87 @@
 import { describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { IPC_CHANNELS } from "../src/shared/ipc-contract.js";
 
-const repoRoot = path.resolve(__dirname, "..");
-
-type ChannelDeclarations = Map<string, string>;
+const appRoot = path.resolve(__dirname, "..");
 
 async function readProjectFile(relativePath: string): Promise<string> {
-  return fs.readFile(path.join(repoRoot, relativePath), "utf8");
+  return fs.readFile(path.join(appRoot, relativePath), "utf8");
 }
 
-function readChannelDeclarations(source: string): ChannelDeclarations {
-  const declarations: ChannelDeclarations = new Map();
-  const pattern = /const\s+([A-Z0-9_]+_CHANNEL)\s*=\s*"([^"]+)"/g;
-
-  for (const match of source.matchAll(pattern)) {
-    declarations.set(match[1], match[2]);
-  }
-
-  return declarations;
+function readContractReferences(source: string, callName: string): Set<string> {
+  const pattern = new RegExp(String.raw`${callName}\(\s*(IPC_CHANNELS\.[A-Za-z0-9_.]+)`, "g");
+  return new Set([...source.matchAll(pattern)].map((match) => match[1]));
 }
 
-function resolveChannel(expression: string, declarations: ChannelDeclarations): string | null {
-  const trimmed = expression.trim();
-  const literal = trimmed.match(/^"([^"]+)"$/);
-
-  if (literal) {
-    return literal[1];
-  }
-
-  return declarations.get(trimmed) ?? null;
+function readEventSendReferences(source: string): Set<string> {
+  const pattern = /sendIpcEvent\(\s*[^,\n]+,\s*(IPC_CHANNELS\.[A-Za-z0-9_.]+)/g;
+  return new Set([...source.matchAll(pattern)].map((match) => match[1]));
 }
 
-function readRendererRequestChannels(source: string, declarations: ChannelDeclarations): Set<string> {
-  const channels = new Set<string>();
-  const pattern = /ipcRenderer\.(?:invoke|send)\(\s*([^,\n)]+)/g;
-
-  for (const match of source.matchAll(pattern)) {
-    const channel = resolveChannel(match[1], declarations);
-    if (channel) {
-      channels.add(channel);
-    }
-  }
-
-  return channels;
+function flattenChannelValues(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (!value || typeof value !== "object") return [];
+  return Object.values(value).flatMap(flattenChannelValues);
 }
 
-function readMainHandlerChannels(source: string, declarations: ChannelDeclarations): Set<string> {
-  const channels = new Set<string>();
-  const pattern = /ipcMain\.(?:handle|on)\(\s*([^,\n)]+)/g;
-
-  for (const match of source.matchAll(pattern)) {
-    const channel = resolveChannel(match[1], declarations);
-    if (channel) {
-      channels.add(channel);
-    }
-  }
-
-  return channels;
+async function readMainEventProducers(): Promise<Set<string>> {
+  const sources = await Promise.all([
+    readProjectFile("src/main/ipc.ts"),
+    readProjectFile("src/main/index.ts"),
+    readProjectFile("src/main/updater.ts"),
+    readProjectFile("src/main/log-window.ts")
+  ]);
+  const combined = sources.join("\n");
+  return new Set([
+    ...readEventSendReferences(combined),
+    ...readContractReferences(combined, "sendToAllWindows")
+  ]);
 }
 
-describe("IPC contract", () => {
-  it("registers every preload request channel in the main process", async () => {
+describe("typed IPC contract", () => {
+  it("keeps every channel value unique", () => {
+    const channels = flattenChannelValues(IPC_CHANNELS);
+    expect(new Set(channels).size).toBe(channels.length);
+  });
+
+  it("registers every preload invoke and one-way message in main", async () => {
     const [preloadSource, mainSource] = await Promise.all([
       readProjectFile("src/preload/index.ts"),
       readProjectFile("src/main/ipc.ts")
     ]);
-    const declarations = new Map([
-      ...readChannelDeclarations(preloadSource),
-      ...readChannelDeclarations(mainSource)
-    ]);
 
-    const preloadRequests = readRendererRequestChannels(preloadSource, declarations);
-    const mainHandlers = readMainHandlerChannels(mainSource, declarations);
-    const missing = [...preloadRequests].filter((channel) => !mainHandlers.has(channel));
+    expect(readContractReferences(mainSource, "registerIpcHandler")).toEqual(
+      readContractReferences(preloadSource, "invokeIpc")
+    );
+    expect(readContractReferences(mainSource, "registerIpcMessageHandler")).toEqual(
+      readContractReferences(preloadSource, "sendIpcMessage")
+    );
+  });
+
+  it("provides a main-process producer for every preload event subscription", async () => {
+    const preloadSource = await readProjectFile("src/preload/index.ts");
+    const subscriptions = readContractReferences(preloadSource, "onIpcEvent");
+    const producers = await readMainEventProducers();
+    const missing = [...subscriptions].filter((channel) => !producers.has(channel));
 
     expect(missing).toEqual([]);
   });
+
+  it("keeps raw channel strings inside the shared contract only", async () => {
+    const files = [
+      "src/main/ipc.ts",
+      "src/main/index.ts",
+      "src/main/updater.ts",
+      "src/main/log-window.ts",
+      "src/preload/index.ts",
+      "src/main/ipc-helpers.ts",
+      "src/preload/ipc-helpers.ts"
+    ];
+    const sources = await Promise.all(files.map(readProjectFile));
+
+    for (const source of sources) {
+      expect(source).not.toMatch(/["']benchlocal:(?!\/\/)/);
+    }
+  });
 });
-
-
