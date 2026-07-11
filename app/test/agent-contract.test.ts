@@ -36,16 +36,17 @@ function readStringMatches(source: string, pattern: RegExp): string[] {
 
 describe("Agent API contract", () => {
   it("keeps the documented HTTP and MCP entrypoints wired", async () => {
-    const [agentServerSource, agentMcpSource, mcpRouterSource, mcpResourcesSource, capabilitySource] = await Promise.all([
+    const [agentServerSource, agentMcpSource, mcpRouterSource, mcpReadToolsSource, mcpResourcesSource, capabilitySource] = await Promise.all([
       readProjectFile("src/main/agent-server.ts"),
       readProjectFile("src/main/agent-mcp.ts"),
       readProjectFile("src/main/agent/mcp-router.ts"),
+      readProjectFile("src/main/agent/mcp-read-tools.ts"),
       readProjectFile("src/main/agent/mcp-resources.ts"),
       readProjectFile("src/main/agent/capabilities.ts")
     ]);
 
     const pathnameChecks = new Set(readStringMatches(agentServerSource, /url\.pathname === "([^"]+)"/g));
-    const mcpTools = new Set(readStringMatches(`${mcpRouterSource}\n${capabilitySource}`, /"(benchlocal_[^"]+)"/g));
+    const mcpTools = new Set(readStringMatches(`${mcpRouterSource}\n${mcpReadToolsSource}\n${capabilitySource}`, /"(benchlocal_[^"]+)"/g));
 
     expect([...pathnameChecks]).toEqual(
       expect.arrayContaining(["/v1/health", "/mcp", "/v1/mcp", "/v1/events", "/v1/agent-guide", "/v1/openapi.json"])
@@ -54,6 +55,8 @@ describe("Agent API contract", () => {
     expect(agentMcpSource).toContain("createBenchLocalMcpServer(controller, options)");
     expect(agentMcpSource).not.toContain("server.registerTool(");
     expect(mcpRouterSource).toContain("server.registerTool(");
+    expect(mcpRouterSource).toContain("registerBenchLocalMcpReadTools(server, controller, capabilities)");
+    expect(mcpReadToolsSource).toContain('"benchlocal_get_health"');
     expect(mcpRouterSource).toContain("registerBenchLocalMcpResources(server, capabilities, options)");
     expect(mcpRouterSource).not.toContain("server.registerResource(");
     expect(mcpResourcesSource).toContain("server.registerResource(");
