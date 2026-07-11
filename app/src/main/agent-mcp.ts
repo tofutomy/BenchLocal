@@ -25,7 +25,12 @@ import type {
 } from "@core";
 import { loadOrCreateConfig } from "@core";
 import type { BenchLocalController } from "./controller";
-import { READ_ONLY_CAPABILITY_DEFINITIONS, createReadOnlyAgentCapabilities } from "./agent/capabilities";
+import {
+  READ_ONLY_CAPABILITY_DEFINITIONS,
+  WRITE_CAPABILITY_DEFINITIONS,
+  createReadOnlyAgentCapabilities,
+  createWriteAgentCapabilities
+} from "./agent/capabilities";
 
 type RetryBatchKind = "provider_errors" | "failed_results";
 
@@ -267,6 +272,7 @@ async function retryBatch(
 
 function createBenchLocalMcpServer(controller: BenchLocalController, options: BenchLocalMcpOptions): McpServer {
   const capabilities = createReadOnlyAgentCapabilities(controller, options.getRecentEvents);
+  const writeCapabilities = createWriteAgentCapabilities(controller);
   const server = new McpServer({
     name: "benchlocal",
     title: "BenchLocal",
@@ -484,7 +490,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_create_provider",
+    WRITE_CAPABILITY_DEFINITIONS.createProvider.mcp.tool,
     {
       title: "Create Provider",
       description: "Create one provider record.",
@@ -499,11 +505,11 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, openWorldHint: false }
     },
-    async (input) => jsonToolResult(await controller.createProvider(input as BenchLocalAgentCreateProviderRequest))
+    async (input) => jsonToolResult(await writeCapabilities.createProvider(input as BenchLocalAgentCreateProviderRequest))
   );
 
   server.registerTool(
-    "benchlocal_update_provider",
+    WRITE_CAPABILITY_DEFINITIONS.updateProvider.mcp.tool,
     {
       title: "Update Provider",
       description: "Patch one provider record.",
@@ -519,12 +525,12 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       annotations: { readOnlyHint: false, openWorldHint: false }
     },
     async ({ providerId, ...patch }) => jsonToolResult(
-      await controller.updateProvider(providerId, patch as BenchLocalAgentPatchProviderRequest)
+      await writeCapabilities.updateProvider(providerId, patch as BenchLocalAgentPatchProviderRequest)
     )
   );
 
   server.registerTool(
-    "benchlocal_delete_provider",
+    WRITE_CAPABILITY_DEFINITIONS.deleteProvider.mcp.tool,
     {
       title: "Delete Provider",
       description: "Delete a provider and its linked models.",
@@ -533,11 +539,11 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }
     },
-    async ({ providerId }) => jsonToolResult(await controller.deleteProvider(providerId))
+    async ({ providerId }) => jsonToolResult(await writeCapabilities.deleteProvider(providerId))
   );
 
   server.registerTool(
-    "benchlocal_duplicate_provider",
+    WRITE_CAPABILITY_DEFINITIONS.duplicateProvider.mcp.tool,
     {
       title: "Duplicate Provider",
       description: "Duplicate one provider record without duplicating linked models.",
@@ -546,7 +552,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, openWorldHint: false }
     },
-    async ({ providerId }) => jsonToolResult(await controller.duplicateProvider(providerId))
+    async ({ providerId }) => jsonToolResult(await writeCapabilities.duplicateProvider(providerId))
   );
 
   server.registerTool(
@@ -587,7 +593,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_create_model",
+    WRITE_CAPABILITY_DEFINITIONS.createModel.mcp.tool,
     {
       title: "Create Model",
       description: "Create one model record.",
@@ -601,11 +607,11 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, openWorldHint: false }
     },
-    async (input) => jsonToolResult(await controller.createModel(input as BenchLocalAgentCreateModelRequest))
+    async (input) => jsonToolResult(await writeCapabilities.createModel(input as BenchLocalAgentCreateModelRequest))
   );
 
   server.registerTool(
-    "benchlocal_update_model",
+    WRITE_CAPABILITY_DEFINITIONS.updateModel.mcp.tool,
     {
       title: "Update Model",
       description: "Patch one model record.",
@@ -621,12 +627,12 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       annotations: { readOnlyHint: false, openWorldHint: false }
     },
     async ({ modelId, ...patch }) => jsonToolResult(
-      await controller.updateModel(modelId, patch as BenchLocalAgentPatchModelRequest)
+      await writeCapabilities.updateModel(modelId, patch as BenchLocalAgentPatchModelRequest)
     )
   );
 
   server.registerTool(
-    "benchlocal_delete_model",
+    WRITE_CAPABILITY_DEFINITIONS.deleteModel.mcp.tool,
     {
       title: "Delete Model",
       description: "Delete one model record and remove it from tab selections.",
@@ -635,11 +641,11 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }
     },
-    async ({ modelId }) => jsonToolResult(await controller.deleteModel(modelId))
+    async ({ modelId }) => jsonToolResult(await writeCapabilities.deleteModel(modelId))
   );
 
   server.registerTool(
-    "benchlocal_duplicate_model",
+    WRITE_CAPABILITY_DEFINITIONS.duplicateModel.mcp.tool,
     {
       title: "Duplicate Model",
       description: "Duplicate one model record.",
@@ -648,7 +654,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: false, openWorldHint: false }
     },
-    async ({ modelId }) => jsonToolResult(await controller.duplicateModel(modelId))
+    async ({ modelId }) => jsonToolResult(await writeCapabilities.duplicateModel(modelId))
   );
 
   server.registerTool(

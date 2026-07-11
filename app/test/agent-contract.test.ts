@@ -3,7 +3,12 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { BenchLocalAgentEvent } from "@core";
 import type { BenchLocalController } from "../src/main/controller";
-import { READ_ONLY_CAPABILITY_DEFINITIONS, createReadOnlyAgentCapabilities } from "../src/main/agent/capabilities";
+import {
+  READ_ONLY_CAPABILITY_DEFINITIONS,
+  WRITE_CAPABILITY_DEFINITIONS,
+  createReadOnlyAgentCapabilities,
+  createWriteAgentCapabilities
+} from "../src/main/agent/capabilities";
 
 const repoRoot = path.resolve(__dirname, "..");
 
@@ -102,6 +107,34 @@ describe("Agent API contract", () => {
     expect(await capabilities.runSummary("pack-1", "run-1")).toEqual({ run: { runId: "run-1" } });
     await expect(capabilities.model("missing")).rejects.toMatchObject({ statusCode: 404 });
     expect(calls).toEqual(["config"]);
+  });
+
+  it("registers provider and model writes once and delegates their handlers", async () => {
+    const definitions = Object.values(WRITE_CAPABILITY_DEFINITIONS);
+    const ids = definitions.map((definition) => definition.id);
+    const tools = definitions.map((definition) => definition.mcp.tool);
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(new Set(tools).size).toBe(tools.length);
+
+    const calls: string[] = [];
+    const controller = {
+      createProvider: async () => calls.push("createProvider"),
+      updateProvider: async () => calls.push("updateProvider"),
+      deleteProvider: async () => calls.push("deleteProvider"),
+      duplicateProvider: async () => calls.push("duplicateProvider"),
+      createModel: async () => calls.push("createModel"),
+      updateModel: async () => calls.push("updateModel"),
+      deleteModel: async () => calls.push("deleteModel"),
+      duplicateModel: async () => calls.push("duplicateModel")
+    } as unknown as BenchLocalController;
+    const capabilities = createWriteAgentCapabilities(controller);
+
+    await capabilities.createProvider({ kind: "ollama", base_url: "http://localhost" });
+    await capabilities.updateProvider("provider-1", { enabled: false });
+    await capabilities.deleteModel("model-1");
+    await capabilities.duplicateModel("model-1");
+    expect(calls).toEqual(["createProvider", "updateProvider", "deleteModel", "duplicateModel"]);
   });
 });
 

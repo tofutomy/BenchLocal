@@ -26,7 +26,11 @@ import type {
 import { getBenchLocalHome, loadOrCreateConfig } from "@core";
 import { benchLocalController, type BenchLocalController } from "./controller";
 import { handleBenchLocalMcpRequest } from "./agent-mcp";
-import { CapabilityNotFoundError, createReadOnlyAgentCapabilities } from "./agent/capabilities";
+import {
+  CapabilityNotFoundError,
+  createReadOnlyAgentCapabilities,
+  createWriteAgentCapabilities
+} from "./agent/capabilities";
 
 type AgentSession = {
   token: string;
@@ -936,8 +940,13 @@ Refresh selected models:
     return createReadOnlyAgentCapabilities(this.controller, () => [...this.recentEvents]);
   }
 
+  private createWriteCapabilities() {
+    return createWriteAgentCapabilities(this.controller);
+  }
+
   private async routeV1(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
     const capabilities = this.createReadOnlyCapabilities();
+    const writeCapabilities = this.createWriteCapabilities();
 
     if (request.method === "GET" && segments.length === 1 && segments[0] === "config") {
       sendJson(response, 200, await capabilities.config());
@@ -967,7 +976,7 @@ Refresh selected models:
     if (request.method === "POST" && segments.length === 1 && segments[0] === "providers") {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["id", "kind", "name", "enabled", "base_url", "api_key", "api_key_env"]);
-      sendJson(response, 201, await this.controller.createProvider(body as BenchLocalAgentCreateProviderRequest));
+      sendJson(response, 201, await writeCapabilities.createProvider(body as BenchLocalAgentCreateProviderRequest));
       return;
     }
 
@@ -984,7 +993,7 @@ Refresh selected models:
     if (request.method === "POST" && segments.length === 1 && segments[0] === "models") {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["id", "provider", "model", "label", "group", "enabled"]);
-      sendJson(response, 201, await this.controller.createModel(body as BenchLocalAgentCreateModelRequest));
+      sendJson(response, 201, await writeCapabilities.createModel(body as BenchLocalAgentCreateModelRequest));
       return;
     }
 
@@ -1038,6 +1047,7 @@ Refresh selected models:
   private async routeProviderCommand(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
     const providerId = segments[1];
     const capabilities = this.createReadOnlyCapabilities();
+    const writeCapabilities = this.createWriteCapabilities();
 
     if (request.method === "GET" && segments.length === 2) {
       sendJson(response, 200, await capabilities.provider(providerId));
@@ -1047,17 +1057,17 @@ Refresh selected models:
     if (request.method === "PATCH" && segments.length === 2) {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["kind", "name", "enabled", "base_url", "api_key", "api_key_env"]);
-      sendJson(response, 200, await this.controller.updateProvider(providerId, body as BenchLocalAgentPatchProviderRequest));
+      sendJson(response, 200, await writeCapabilities.updateProvider(providerId, body as BenchLocalAgentPatchProviderRequest));
       return;
     }
 
     if (request.method === "DELETE" && segments.length === 2) {
-      sendJson(response, 200, await this.controller.deleteProvider(providerId));
+      sendJson(response, 200, await writeCapabilities.deleteProvider(providerId));
       return;
     }
 
     if (request.method === "POST" && segments.length === 3 && segments[2] === "duplicate") {
-      sendJson(response, 201, await this.controller.duplicateProvider(providerId));
+      sendJson(response, 201, await writeCapabilities.duplicateProvider(providerId));
       return;
     }
 
@@ -1078,20 +1088,21 @@ Refresh selected models:
       return;
     }
 
+    const writeCapabilities = this.createWriteCapabilities();
     if (request.method === "PATCH" && segments.length === 2) {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["id", "provider", "model", "label", "group", "enabled"]);
-      sendJson(response, 200, await this.controller.updateModel(modelId, body as BenchLocalAgentPatchModelRequest));
+      sendJson(response, 200, await writeCapabilities.updateModel(modelId, body as BenchLocalAgentPatchModelRequest));
       return;
     }
 
     if (request.method === "DELETE" && segments.length === 2) {
-      sendJson(response, 200, await this.controller.deleteModel(modelId));
+      sendJson(response, 200, await writeCapabilities.deleteModel(modelId));
       return;
     }
 
     if (request.method === "POST" && segments.length === 3 && segments[2] === "duplicate") {
-      sendJson(response, 201, await this.controller.duplicateModel(modelId));
+      sendJson(response, 201, await writeCapabilities.duplicateModel(modelId));
       return;
     }
 

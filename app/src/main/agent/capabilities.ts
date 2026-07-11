@@ -1,4 +1,10 @@
-import type { BenchLocalAgentEvent } from "@core";
+import type {
+  BenchLocalAgentCreateModelRequest,
+  BenchLocalAgentCreateProviderRequest,
+  BenchLocalAgentEvent,
+  BenchLocalAgentPatchModelRequest,
+  BenchLocalAgentPatchProviderRequest
+} from "@core";
 import type { BenchLocalController } from "../controller";
 
 export const READ_ONLY_CAPABILITY_DEFINITIONS = {
@@ -170,5 +176,64 @@ export function createReadOnlyAgentCapabilities(
       const count = Number.isFinite(limit) && limit && limit > 0 ? Math.floor(limit) : events.length;
       return { events: events.slice(-count) };
     }
+  };
+}
+
+export const WRITE_CAPABILITY_DEFINITIONS = {
+  createProvider: {
+    id: "providers.create",
+    http: { method: "POST", path: "/v1/providers", successStatus: 201 },
+    mcp: { tool: "benchlocal_create_provider" }
+  },
+  updateProvider: {
+    id: "providers.update",
+    http: { method: "PATCH", path: "/v1/providers/{providerId}", successStatus: 200 },
+    mcp: { tool: "benchlocal_update_provider" }
+  },
+  deleteProvider: {
+    id: "providers.delete",
+    http: { method: "DELETE", path: "/v1/providers/{providerId}", successStatus: 200 },
+    mcp: { tool: "benchlocal_delete_provider" }
+  },
+  duplicateProvider: {
+    id: "providers.duplicate",
+    http: { method: "POST", path: "/v1/providers/{providerId}/duplicate", successStatus: 201 },
+    mcp: { tool: "benchlocal_duplicate_provider" }
+  },
+  createModel: {
+    id: "models.create",
+    http: { method: "POST", path: "/v1/models", successStatus: 201 },
+    mcp: { tool: "benchlocal_create_model" }
+  },
+  updateModel: {
+    id: "models.update",
+    http: { method: "PATCH", path: "/v1/models/{modelId}", successStatus: 200 },
+    mcp: { tool: "benchlocal_update_model" }
+  },
+  deleteModel: {
+    id: "models.delete",
+    http: { method: "DELETE", path: "/v1/models/{modelId}", successStatus: 200 },
+    mcp: { tool: "benchlocal_delete_model" }
+  },
+  duplicateModel: {
+    id: "models.duplicate",
+    http: { method: "POST", path: "/v1/models/{modelId}/duplicate", successStatus: 201 },
+    mcp: { tool: "benchlocal_duplicate_model" }
+  }
+} as const;
+
+export type WriteCapabilityKey = keyof typeof WRITE_CAPABILITY_DEFINITIONS;
+
+export function createWriteAgentCapabilities(controller: BenchLocalController) {
+  // 写 handler 只编排领域调用，HTTP 状态码与 MCP 注解继续由各自适配层负责。
+  return {
+    createProvider: (input: BenchLocalAgentCreateProviderRequest) => controller.createProvider(input),
+    updateProvider: (providerId: string, input: BenchLocalAgentPatchProviderRequest) => controller.updateProvider(providerId, input),
+    deleteProvider: (providerId: string) => controller.deleteProvider(providerId),
+    duplicateProvider: (providerId: string) => controller.duplicateProvider(providerId),
+    createModel: (input: BenchLocalAgentCreateModelRequest) => controller.createModel(input),
+    updateModel: (modelId: string, input: BenchLocalAgentPatchModelRequest) => controller.updateModel(modelId, input),
+    deleteModel: (modelId: string) => controller.deleteModel(modelId),
+    duplicateModel: (modelId: string) => controller.duplicateModel(modelId)
   };
 }
