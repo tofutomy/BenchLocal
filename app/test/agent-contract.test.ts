@@ -71,7 +71,7 @@ describe("Agent API contract", () => {
         calls.push("config");
         return { providers: {} };
       },
-      loadWorkspaceState: async () => ({ state: { workspaces: [] } }),
+      loadWorkspaceState: async () => ({ state: { workspaces: [], tabs: { tab1: { modelSelections: [{ modelId: "model-1" }] } } } }),
       listBenchPacks: async () => [],
       loadBenchPackRegistry: async () => [],
       listProviders: async () => ({ provider1: { name: "Provider 1" } }),
@@ -79,6 +79,7 @@ describe("Agent API contract", () => {
       loadConfig: async () => ({ config: { models: [{ id: "model-1" }] } }),
       listActiveRuns: async () => [],
       listVerifiers: async () => [],
+      checkModelAvailability: async (input: { modelIds?: string[] }) => input.modelIds ?? [],
       listRunHistory: async () => [{ runId: "run-1" }],
       loadRunHistory: async () => ({ runId: "run-1" })
     } as unknown as BenchLocalController;
@@ -95,6 +96,9 @@ describe("Agent API contract", () => {
     expect(await capabilities.discoverProviderModels("provider1")).toEqual({ models: [{ id: "remote-model" }] });
     expect(await capabilities.model("model-1")).toEqual({ model: { id: "model-1" } });
     expect(await capabilities.runHistory("pack-1")).toEqual({ history: [{ runId: "run-1" }] });
+    expect(await capabilities.modelAvailability(["model-1"])).toEqual({ availability: ["model-1"] });
+    expect(await capabilities.refreshModelAvailability({ tabId: "tab1" })).toEqual({ availability: ["model-1"] });
+    await expect(capabilities.refreshModelAvailability({ tabId: "missing" })).rejects.toMatchObject({ statusCode: 404 });
     expect(await capabilities.runSummary("pack-1", "run-1")).toEqual({ run: { runId: "run-1" } });
     await expect(capabilities.model("missing")).rejects.toMatchObject({ statusCode: 404 });
     expect(calls).toEqual(["config"]);

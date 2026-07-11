@@ -47,6 +47,17 @@ export const READ_ONLY_CAPABILITY_DEFINITIONS = {
     http: { method: "GET", path: "/v1/models/{modelId}" },
     mcp: { tool: "benchlocal_get_model" }
   },
+  modelAvailability: {
+    id: "models.availability.check",
+    http: { method: "GET", path: "/v1/models/availability" },
+    mcp: { tool: "benchlocal_check_model_availability" }
+  },
+  refreshModelAvailability: {
+    id: "models.availability.refresh",
+    http: { method: "POST", path: "/v1/models/availability/refresh" },
+    httpAliases: ["/v1/tabs/{tabId}/models/availability/refresh"],
+    mcp: { tool: "benchlocal_refresh_model_availability" }
+  },
   activeRuns: {
     id: "runs.active.list",
     http: { method: "GET", path: "/v1/runs/active" },
@@ -123,6 +134,31 @@ export function createReadOnlyAgentCapabilities(
       }
 
       return { model };
+    },
+    modelAvailability: async (modelIds?: string[]) => {
+      const { config } = await controller.loadConfig();
+      return { availability: await controller.checkModelAvailability({ config, modelIds }) };
+    },
+    refreshModelAvailability: async (input: { tabId?: string; modelIds?: unknown }) => {
+      let modelIds = Array.isArray(input.modelIds)
+        ? input.modelIds.filter((modelId): modelId is string => typeof modelId === "string")
+        : undefined;
+
+      if (input.tabId && (!modelIds || modelIds.length === 0)) {
+        const { state } = await controller.loadWorkspaceState();
+        const tab = state.tabs[input.tabId];
+
+        if (!tab) {
+          throw new CapabilityNotFoundError(`Tab "${input.tabId}" was not found.`);
+        }
+
+        modelIds = tab.modelSelections.map((selection) => selection.modelId);
+      }
+
+      const { config } = await controller.loadConfig();
+      return {
+        availability: await controller.checkModelAvailability({ config, modelIds })
+      };
     },
     verifiers: async () => ({ verifiers: await controller.listVerifiers() }),
     runHistory: async (benchPackId: string) => ({ history: await controller.listRunHistory(benchPackId) }),

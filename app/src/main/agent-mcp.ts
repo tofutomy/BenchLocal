@@ -19,7 +19,6 @@ import type {
   BenchLocalAgentSelectBenchPackRequest,
   BenchLocalAgentSelectModelsRequest,
   BenchLocalAgentResumeRunRequest,
-  BenchLocalAgentAvailabilityRefreshRequest,
   BenchLocalExecutionMode,
   BenchLocalWorkspaceTab,
   GenerationRequest
@@ -155,22 +154,6 @@ async function resolveTabRun(
   };
 }
 
-async function refreshTabModelAvailability(
-  controller: BenchLocalController,
-  tabId: string,
-  request: BenchLocalAgentAvailabilityRefreshRequest
-) {
-  const { tab } = await loadRequiredTab(controller, tabId);
-  const modelIds = Array.isArray(request.modelIds) && request.modelIds.length > 0
-    ? request.modelIds.filter((modelId): modelId is string => typeof modelId === "string")
-    : tab.modelSelections.map((selection) => selection.modelId);
-  const { config } = await loadOrCreateConfig();
-
-  return controller.checkModelAvailability({
-    config,
-    modelIds
-  });
-}
 
 async function startRun(controller: BenchLocalController, tabId: string, request: BenchLocalAgentRunRequest): Promise<void> {
   const resolved = await resolveTabRun(controller, tabId, request);
@@ -669,7 +652,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_check_model_availability",
+    READ_ONLY_CAPABILITY_DEFINITIONS.modelAvailability.mcp.tool,
     {
       title: "Check Model Availability",
       description: "Check availability for all models or selected model ids.",
@@ -678,16 +661,11 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: true, openWorldHint: true }
     },
-    async ({ modelIds }) => {
-      const { config } = await loadOrCreateConfig();
-      return jsonToolResult({
-        availability: await controller.checkModelAvailability({ config, modelIds })
-      });
-    }
+    async ({ modelIds }) => jsonToolResult(await capabilities.modelAvailability(modelIds))
   );
 
   server.registerTool(
-    "benchlocal_refresh_model_availability",
+    READ_ONLY_CAPABILITY_DEFINITIONS.refreshModelAvailability.mcp.tool,
     {
       title: "Refresh Model Availability",
       description: "Refresh model availability globally or for a tab's selected models.",
@@ -697,18 +675,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: true, openWorldHint: true }
     },
-    async ({ tabId, modelIds }) => {
-      if (tabId) {
-        return jsonToolResult({
-          availability: await refreshTabModelAvailability(controller, tabId, { modelIds })
-        });
-      }
-
-      const { config } = await loadOrCreateConfig();
-      return jsonToolResult({
-        availability: await controller.checkModelAvailability({ config, modelIds })
-      });
-    }
+    async ({ tabId, modelIds }) => jsonToolResult(await capabilities.refreshModelAvailability({ tabId, modelIds }))
   );
 
   server.registerTool(

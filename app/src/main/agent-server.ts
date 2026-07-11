@@ -21,7 +21,6 @@ import type {
   BenchLocalAgentSelectBenchPackRequest,
   BenchLocalAgentSelectModelsRequest,
   BenchLocalAgentResumeRunRequest,
-  BenchLocalAgentAvailabilityRefreshRequest,
   BenchLocalWorkspaceTab
 } from "@core";
 import { getBenchLocalHome, loadOrCreateConfig } from "@core";
@@ -990,22 +989,14 @@ Refresh selected models:
     }
 
     if (request.method === "GET" && segments.length === 2 && segments[0] === "models" && segments[1] === "availability") {
-      const { config } = await loadOrCreateConfig();
-      sendJson(response, 200, { availability: await this.controller.checkModelAvailability({ config }) });
+      sendJson(response, 200, await capabilities.modelAvailability());
       return;
     }
 
     if (request.method === "POST" && segments.length === 3 && segments[0] === "models" && segments[1] === "availability" && segments[2] === "refresh") {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["modelIds"]);
-      const input = body as BenchLocalAgentAvailabilityRefreshRequest;
-      const { config } = await loadOrCreateConfig();
-      sendJson(response, 200, {
-        availability: await this.controller.checkModelAvailability({
-          config,
-          modelIds: Array.isArray(input.modelIds) ? input.modelIds.filter((modelId): modelId is string => typeof modelId === "string") : undefined
-        })
-      });
+      sendJson(response, 200, await capabilities.refreshModelAvailability(body as { modelIds?: unknown }));
       return;
     }
 
@@ -1152,7 +1143,7 @@ Refresh selected models:
     if (request.method === "POST" && segments.length === 5 && segments[2] === "models" && segments[3] === "availability" && segments[4] === "refresh") {
       const body = await readJsonRequest(request);
       assertOnlyKeys(body, ["modelIds"]);
-      sendJson(response, 200, { availability: await this.refreshTabModelAvailability(tabId, body as BenchLocalAgentAvailabilityRefreshRequest) });
+      sendJson(response, 200, await this.createReadOnlyCapabilities().refreshModelAvailability({ tabId, ...(body as { modelIds?: unknown }) }));
       return;
     }
 
@@ -1231,18 +1222,6 @@ Refresh selected models:
     throw new HttpError(404, "Unknown endpoint.");
   }
 
-  private async refreshTabModelAvailability(tabId: string, request: BenchLocalAgentAvailabilityRefreshRequest) {
-    const { tab } = await this.loadRequiredTab(tabId);
-    const modelIds = Array.isArray(request.modelIds) && request.modelIds.length > 0
-      ? request.modelIds.filter((modelId): modelId is string => typeof modelId === "string")
-      : tab.modelSelections.map((selection) => selection.modelId);
-    const { config } = await loadOrCreateConfig();
-
-    return this.controller.checkModelAvailability({
-      config,
-      modelIds
-    });
-  }
 
   private async startRun(tabId: string, request: BenchLocalAgentRunRequest): Promise<void> {
     const resolved = await this.resolveTabRun(tabId, request);
