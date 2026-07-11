@@ -10,6 +10,12 @@ import {
   createWriteAgentCapabilities
 } from "../src/main/agent/capabilities";
 
+import {
+  executionModeSchema,
+  generationSchema,
+  modelSelectionSchema,
+  providerKindSchema
+} from "../src/main/agent/schemas";
 const repoRoot = path.resolve(__dirname, "..");
 
 async function readProjectFile(relativePath: string): Promise<string> {
@@ -267,6 +273,22 @@ describe("Agent API contract", () => {
     expect(retryInputs[1]).toMatchObject({ options: { runsPerTest: 5, generation: { temperature: 0.4 } } });
     await Promise.resolve();
     expect(loadedRuns).toEqual(["retry-scenario", "retry-batch"]);
+  });
+
+  it("shares stable primitive schemas across Agent transports", () => {
+    expect(executionModeSchema.safeParse("full_parallel").success).toBe(true);
+    expect(executionModeSchema.safeParse("parallel").success).toBe(false);
+    expect(providerKindSchema.safeParse("openai_compatible").success).toBe(true);
+    expect(providerKindSchema.safeParse("unknown").success).toBe(false);
+    expect(generationSchema.parse({
+      temperature: 0.2,
+      request_timeout_seconds: 30
+    })).toEqual({
+      temperature: 0.2,
+      request_timeout_seconds: 30
+    });
+    expect(modelSelectionSchema.safeParse({ modelId: "model-1", alias: "primary" }).success).toBe(true);
+    expect(modelSelectionSchema.safeParse({ alias: "missing-id" }).success).toBe(false);
   });
 
 });
