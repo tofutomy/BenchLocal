@@ -27,6 +27,7 @@ import type {
 import { getBenchLocalHome, loadOrCreateConfig } from "@core";
 import { benchLocalController, type BenchLocalController } from "./controller";
 import { handleBenchLocalMcpRequest } from "./agent-mcp";
+import { createReadOnlyAgentCapabilities } from "./agent/capabilities";
 
 type AgentSession = {
   token: string;
@@ -933,28 +934,30 @@ Refresh selected models:
   }
 
   private async routeV1(request: IncomingMessage, response: ServerResponse, segments: string[]): Promise<void> {
+    const capabilities = createReadOnlyAgentCapabilities(this.controller, () => [...this.recentEvents]);
+
     if (request.method === "GET" && segments.length === 1 && segments[0] === "config") {
-      sendJson(response, 200, { config: await this.controller.getSafeConfig() });
+      sendJson(response, 200, await capabilities.config());
       return;
     }
 
     if (request.method === "GET" && segments.length === 1 && segments[0] === "workspaces") {
-      sendJson(response, 200, await this.controller.loadWorkspaceState());
+      sendJson(response, 200, await capabilities.workspaces());
       return;
     }
 
     if (request.method === "GET" && segments.length === 1 && segments[0] === "benchpacks") {
-      sendJson(response, 200, { benchPacks: await this.controller.listBenchPacks() });
+      sendJson(response, 200, await capabilities.benchPacks());
       return;
     }
 
     if (request.method === "GET" && segments.length === 2 && segments[0] === "benchpacks" && segments[1] === "registry") {
-      sendJson(response, 200, { registry: await this.controller.loadBenchPackRegistry() });
+      sendJson(response, 200, await capabilities.benchPackRegistry());
       return;
     }
 
     if (request.method === "GET" && segments.length === 1 && segments[0] === "providers") {
-      sendJson(response, 200, { providers: await this.controller.listProviders() });
+      sendJson(response, 200, await capabilities.providers());
       return;
     }
 
@@ -971,8 +974,7 @@ Refresh selected models:
     }
 
     if (request.method === "GET" && segments.length === 1 && segments[0] === "models") {
-      const { config } = await loadOrCreateConfig();
-      sendJson(response, 200, { models: config.models });
+      sendJson(response, 200, await capabilities.models());
       return;
     }
 
@@ -1009,12 +1011,12 @@ Refresh selected models:
     }
 
     if (request.method === "GET" && segments.length === 2 && segments[0] === "runs" && segments[1] === "active") {
-      sendJson(response, 200, { activeRuns: await this.controller.listActiveRuns() });
+      sendJson(response, 200, await capabilities.activeRuns());
       return;
     }
 
     if (request.method === "GET" && segments.length === 1 && segments[0] === "verifiers") {
-      sendJson(response, 200, { verifiers: await this.controller.listVerifiers() });
+      sendJson(response, 200, await capabilities.verifiers());
       return;
     }
 

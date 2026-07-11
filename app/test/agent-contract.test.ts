@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { BenchLocalAgentEvent } from "@core";
+import type { BenchLocalController } from "../src/main/controller";
+import { READ_ONLY_CAPABILITY_DEFINITIONS, createReadOnlyAgentCapabilities } from "../src/main/agent/capabilities";
 
 const repoRoot = path.resolve(__dirname, "..");
 
@@ -14,13 +17,14 @@ function readStringMatches(source: string, pattern: RegExp): string[] {
 
 describe("Agent API contract", () => {
   it("keeps the documented HTTP and MCP entrypoints wired", async () => {
-    const [agentServerSource, agentMcpSource] = await Promise.all([
+    const [agentServerSource, agentMcpSource, capabilitySource] = await Promise.all([
       readProjectFile("src/main/agent-server.ts"),
-      readProjectFile("src/main/agent-mcp.ts")
+      readProjectFile("src/main/agent-mcp.ts"),
+      readProjectFile("src/main/agent/capabilities.ts")
     ]);
 
     const pathnameChecks = new Set(readStringMatches(agentServerSource, /url\.pathname === "([^"]+)"/g));
-    const mcpTools = new Set(readStringMatches(agentMcpSource, /"(benchlocal_[^"]+)"/g));
+    const mcpTools = new Set(readStringMatches(`${agentMcpSource}\n${capabilitySource}`, /"(benchlocal_[^"]+)"/g));
 
     expect([...pathnameChecks]).toEqual(
       expect.arrayContaining(["/v1/health", "/mcp", "/v1/mcp", "/v1/events", "/v1/agent-guide", "/v1/openapi.json"])
@@ -40,6 +44,51 @@ describe("Agent API contract", () => {
         "benchlocal_get_recent_events"
       ])
     );
+  });
+
+  it("keeps read-only capability ids and transport mappings unique", () => {
+    const definitions = Object.values(READ_ONLY_CAPABILITY_DEFINITIONS);
+    const ids = definitions.map((definition) => definition.id);
+    const httpPaths = definitions.flatMap((definition) => "http" in definition ? [definition.http.path] : []);
+    const mcpTools = definitions.map((definition) => definition.mcp.tool);
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(new Set(httpPaths).size).toBe(httpPaths.length);
+    expect(new Set(mcpTools).size).toBe(mcpTools.length);
+    expect(httpPaths).toEqual(expect.arrayContaining([
+      "/v1/config",
+      "/v1/workspaces",
+      "/v1/benchpacks",
+      "/v1/models",
+      "/v1/runs/active"
+    ]));
+  });
+
+  it("shares read-only response shaping between HTTP and MCP adapters", async () => {
+    const calls: string[] = [];
+    const controller = {
+      getSafeConfig: async () => {
+        calls.push("config");
+        return { providers: {} };
+      },
+      loadWorkspaceState: async () => ({ state: { workspaces: [] } }),
+      listBenchPacks: async () => [],
+      loadBenchPackRegistry: async () => [],
+      listProviders: async () => ({}),
+      loadConfig: async () => ({ config: { models: [{ id: "model-1" }] } }),
+      listActiveRuns: async () => [],
+      listVerifiers: async () => []
+    } as unknown as BenchLocalController;
+    const events: BenchLocalAgentEvent[] = [
+      { eventId: "evt-1", createdAt: "2026-01-01T00:00:00.000Z", type: "benchpack.run.event", payload: {} },
+      { eventId: "evt-2", createdAt: "2026-01-01T00:00:01.000Z", type: "benchpack.run.event", payload: {} }
+    ];
+    const capabilities = createReadOnlyAgentCapabilities(controller, () => events);
+
+    expect(await capabilities.config()).toEqual({ config: { providers: {} } });
+    expect(await capabilities.models()).toEqual({ models: [{ id: "model-1" }] });
+    expect(await capabilities.recentEvents(1)).toEqual({ events: [events[1]] });
+    expect(calls).toEqual(["config"]);
   });
 });
 

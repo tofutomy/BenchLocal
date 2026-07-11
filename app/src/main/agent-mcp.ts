@@ -26,6 +26,7 @@ import type {
 } from "@core";
 import { loadOrCreateConfig } from "@core";
 import type { BenchLocalController } from "./controller";
+import { READ_ONLY_CAPABILITY_DEFINITIONS, createReadOnlyAgentCapabilities } from "./agent/capabilities";
 
 type RetryBatchKind = "provider_errors" | "failed_results";
 
@@ -282,6 +283,7 @@ async function retryBatch(
 }
 
 function createBenchLocalMcpServer(controller: BenchLocalController, options: BenchLocalMcpOptions): McpServer {
+  const capabilities = createReadOnlyAgentCapabilities(controller, options.getRecentEvents);
   const server = new McpServer({
     name: "benchlocal",
     title: "BenchLocal",
@@ -313,82 +315,79 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
 
   server.registerResource(
     "benchlocal-config",
-    "benchlocal://state/config",
+    READ_ONLY_CAPABILITY_DEFINITIONS.config.mcp.resource,
     {
       title: "BenchLocal Config",
       description: "Redacted BenchLocal configuration.",
       mimeType: "application/json"
     },
-    async (uri) => jsonResource(uri.href, { config: await controller.getSafeConfig() })
+    async (uri) => jsonResource(uri.href, await capabilities.config())
   );
 
   server.registerResource(
     "benchlocal-workspaces",
-    "benchlocal://state/workspaces",
+    READ_ONLY_CAPABILITY_DEFINITIONS.workspaces.mcp.resource,
     {
       title: "BenchLocal Workspaces",
       description: "Workspace and tab state.",
       mimeType: "application/json"
     },
-    async (uri) => jsonResource(uri.href, await controller.loadWorkspaceState())
+    async (uri) => jsonResource(uri.href, await capabilities.workspaces())
   );
 
   server.registerResource(
     "benchlocal-benchpacks",
-    "benchlocal://state/benchpacks",
+    READ_ONLY_CAPABILITY_DEFINITIONS.benchPacks.mcp.resource,
     {
       title: "BenchLocal Bench Packs",
       description: "Installed Bench Packs and scenario metadata.",
       mimeType: "application/json"
     },
-    async (uri) => jsonResource(uri.href, { benchPacks: await controller.listBenchPacks() })
+    async (uri) => jsonResource(uri.href, await capabilities.benchPacks())
   );
 
   server.registerResource(
     "benchlocal-providers",
-    "benchlocal://state/providers",
+    READ_ONLY_CAPABILITY_DEFINITIONS.providers.mcp.resource,
     {
       title: "BenchLocal Providers",
       description: "Configured providers with secrets redacted.",
       mimeType: "application/json"
     },
-    async (uri) => jsonResource(uri.href, { providers: await controller.listProviders() })
+    async (uri) => jsonResource(uri.href, await capabilities.providers())
   );
 
   server.registerResource(
     "benchlocal-models",
-    "benchlocal://state/models",
+    READ_ONLY_CAPABILITY_DEFINITIONS.models.mcp.resource,
     {
       title: "BenchLocal Models",
       description: "Configured benchmark models.",
       mimeType: "application/json"
     },
-    async (uri) => {
-      const { config } = await loadOrCreateConfig();
-      return jsonResource(uri.href, { models: config.models });
-    }
+    async (uri) => jsonResource(uri.href, await capabilities.models())
   );
 
   server.registerResource(
     "benchlocal-active-runs",
-    "benchlocal://state/runs/active",
+    READ_ONLY_CAPABILITY_DEFINITIONS.activeRuns.mcp.resource,
     {
       title: "BenchLocal Active Runs",
       description: "Currently active benchmark runs.",
       mimeType: "application/json"
     },
-    async (uri) => jsonResource(uri.href, { activeRuns: await controller.listActiveRuns() })
+    async (uri) => jsonResource(uri.href, await capabilities.activeRuns())
   );
 
   server.registerResource(
     "benchlocal-recent-events",
-    "benchlocal://state/events/recent",
+    READ_ONLY_CAPABILITY_DEFINITIONS.recentEvents.mcp.resource,
     {
       title: "BenchLocal Recent Events",
       description: "Recent Agent API events for progress polling.",
       mimeType: "application/json"
     },
-    async (uri) => jsonResource(uri.href, { events: options.getRecentEvents() })
+    async (uri) => jsonResource(uri.href, await capabilities.recentEvents())
   );
 
   server.registerPrompt(
@@ -434,58 +433,58 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_get_config",
+    READ_ONLY_CAPABILITY_DEFINITIONS.config.mcp.tool,
     {
       title: "Get Redacted Config",
       description: "Return BenchLocal config with provider secrets redacted.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async () => jsonToolResult({ config: await controller.getSafeConfig() })
+    async () => jsonToolResult(await capabilities.config())
   );
 
   server.registerTool(
-    "benchlocal_list_workspaces",
+    READ_ONLY_CAPABILITY_DEFINITIONS.workspaces.mcp.tool,
     {
       title: "List Workspaces",
       description: "Return workspace and tab state.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async () => jsonToolResult(await controller.loadWorkspaceState())
+    async () => jsonToolResult(await capabilities.workspaces())
   );
 
   server.registerTool(
-    "benchlocal_list_benchpacks",
+    READ_ONLY_CAPABILITY_DEFINITIONS.benchPacks.mcp.tool,
     {
       title: "List Bench Packs",
       description: "Return installed Bench Packs and scenario metadata.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async () => jsonToolResult({ benchPacks: await controller.listBenchPacks() })
+    async () => jsonToolResult(await capabilities.benchPacks())
   );
 
   server.registerTool(
-    "benchlocal_list_benchpack_registry",
+    READ_ONLY_CAPABILITY_DEFINITIONS.benchPackRegistry.mcp.tool,
     {
       title: "List Bench Pack Registry",
       description: "Return registry entries for installable Bench Packs.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async () => jsonToolResult({ registry: await controller.loadBenchPackRegistry() })
+    async () => jsonToolResult(await capabilities.benchPackRegistry())
   );
 
   server.registerTool(
-    "benchlocal_list_providers",
+    READ_ONLY_CAPABILITY_DEFINITIONS.providers.mcp.tool,
     {
       title: "List Providers",
       description: "Return configured providers with secrets redacted.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async () => jsonToolResult({ providers: await controller.listProviders() })
+    async () => jsonToolResult(await capabilities.providers())
   );
 
   server.registerTool(
@@ -590,17 +589,14 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_list_models",
+    READ_ONLY_CAPABILITY_DEFINITIONS.models.mcp.tool,
     {
       title: "List Models",
       description: "Return configured benchmark models.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async () => {
-      const { config } = await loadOrCreateConfig();
-      return jsonToolResult({ models: config.models });
-    }
+    async () => jsonToolResult(await capabilities.models())
   );
 
   server.registerTool(
@@ -970,14 +966,14 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_list_active_runs",
+    READ_ONLY_CAPABILITY_DEFINITIONS.activeRuns.mcp.tool,
     {
       title: "List Active Runs",
       description: "Return active benchmark runs.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async () => jsonToolResult({ activeRuns: await controller.listActiveRuns() })
+    async () => jsonToolResult(await capabilities.activeRuns())
   );
 
   server.registerTool(
@@ -1008,18 +1004,18 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
   );
 
   server.registerTool(
-    "benchlocal_list_verifiers",
+    READ_ONLY_CAPABILITY_DEFINITIONS.verifiers.mcp.tool,
     {
       title: "List Verifiers",
       description: "Return verifier runtime status.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async () => jsonToolResult({ verifiers: await controller.listVerifiers() })
+    async () => jsonToolResult(await capabilities.verifiers())
   );
 
   server.registerTool(
-    "benchlocal_get_recent_events",
+    READ_ONLY_CAPABILITY_DEFINITIONS.recentEvents.mcp.tool,
     {
       title: "Get Recent Events",
       description: "Return recent Agent API events for polling run progress.",
@@ -1028,11 +1024,7 @@ function createBenchLocalMcpServer(controller: BenchLocalController, options: Be
       },
       annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    async ({ limit }) => {
-      const events = options.getRecentEvents();
-      const count = Number.isFinite(limit) && limit && limit > 0 ? Math.floor(limit) : events.length;
-      return jsonToolResult({ events: events.slice(-count) });
-    }
+    async ({ limit }) => jsonToolResult(await capabilities.recentEvents(limit))
   );
 
   return server;
