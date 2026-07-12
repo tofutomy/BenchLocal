@@ -144,4 +144,42 @@ describe("config persistence", () => {
 
     await expect(loadConfigFile(configPath)).rejects.toThrow(/references unknown provider/);
   });
+
+  it("writes only canonical config fields after loading legacy aliases", async () => {
+    const root = await createTempRoot();
+    const configPath = path.join(root, "config.toml");
+    await fs.writeFile(
+      configPath,
+      `schema_version = 1
+      default_plugin = "legacy-pack"
+      run_storage_dir = "${tomlPath(path.join(root, "runs"))}"
+      plugin_storage_dir = "${tomlPath(path.join(root, "benchpacks"))}"
+      log_storage_dir = "${tomlPath(path.join(root, "logs"))}"
+      cache_dir = "${tomlPath(path.join(root, "cache"))}"
+
+      [plugins.legacy]
+      source = "registry"
+
+      [plugins.legacy.sidecars.api]
+      mode = "docker"
+      `,
+      "utf8"
+    );
+
+    await saveConfigFile(await loadConfigFile(configPath), configPath);
+    const saved = await fs.readFile(configPath, "utf8");
+
+    expect(saved).toContain("default_benchpack");
+    expect(saved).toContain("benchpack_storage_dir");
+    expect(saved).toContain("[benchpacks.legacy.verifiers.api]");
+    expect(saved).not.toMatch(/default_plugin|plugin_storage_dir|sidecars/);
+  });
+
+  it("rejects unsupported config schema versions", async () => {
+    const root = await createTempRoot();
+    const configPath = path.join(root, "config.toml");
+    const base = createDefaultConfig();
+    await fs.writeFile(configPath, `schema_version = 2\nrun_storage_dir = "${tomlPath(base.run_storage_dir)}"`, "utf8");
+    await expect(loadConfigFile(configPath)).rejects.toThrow();
+  });
 });

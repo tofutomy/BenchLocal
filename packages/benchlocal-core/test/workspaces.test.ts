@@ -105,5 +105,33 @@ describe("workspace state persistence", () => {
     expect(saved.tabs[tabId].runsPerTest).toBe(1);
     await expect(fs.stat(statePath)).resolves.toBeDefined();
   });
+
+  it("writes only canonical workspace fields after loading legacy aliases", async () => {
+    const root = await createTempRoot();
+    const statePath = path.join(root, "state.json");
+    const state = createDefaultWorkspaceState();
+    const tabId = Object.keys(state.tabs)[0];
+    const raw = structuredClone(state) as unknown as { tabs: Record<string, Record<string, unknown>> };
+    raw.tabs[tabId].pluginId = "legacy-pack";
+    delete raw.tabs[tabId].benchPackId;
+    raw.tabs[tabId].executionMode = "parallel_scenarios";
+    await fs.writeFile(statePath, JSON.stringify(raw), "utf8");
+
+    await saveWorkspaceStateFile(await loadWorkspaceStateFile(statePath), statePath);
+    const saved = await fs.readFile(statePath, "utf8");
+
+    expect(saved).toContain('"benchPackId": "legacy-pack"');
+    expect(saved).toContain('"executionMode": "parallel_by_test_case"');
+    expect(saved).not.toContain("pluginId");
+    expect(saved).not.toContain("parallel_scenarios");
+  });
+
+  it("rejects unsupported workspace schema versions", async () => {
+    const root = await createTempRoot();
+    const statePath = path.join(root, "state.json");
+    const state = { ...createDefaultWorkspaceState(), schema_version: 2 };
+    await fs.writeFile(statePath, JSON.stringify(state), "utf8");
+    await expect(loadWorkspaceStateFile(statePath)).rejects.toThrow();
+  });
 });
 
