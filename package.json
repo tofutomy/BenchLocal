@@ -27,9 +27,10 @@
     "release:mac": "node scripts/build-macos-release.mjs",
     "typecheck": "npm run typecheck --workspace @benchlocal/core && npm run typecheck --workspace @benchlocal/sdk && npm run typecheck --workspace @benchlocal/web-sdk && npm run typecheck --workspace @benchlocal/benchpack-host && npm run typecheck --workspace app",
     "typecheck:tests": "tsc -p app/test/tsconfig.json --noEmit",
+    "typecheck:api": "npm run build --workspace @benchlocal/core && npm run build --workspace @benchlocal/sdk && npm run build --workspace @benchlocal/web-sdk && tsc -p packages/benchlocal-core/test-d/tsconfig.json && tsc -p packages/benchlocal-sdk/test-d/tsconfig.json && tsc -p packages/benchlocal-web-sdk/test-d/tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "ci": "npm run typecheck && npm run typecheck:tests && npm run test"
+    "ci": "npm run typecheck && npm run typecheck:tests && npm run typecheck:api && npm run test"
   }
 }
