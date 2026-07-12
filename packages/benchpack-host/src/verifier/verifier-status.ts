@@ -1,3 +1,4 @@
+// configured verifier 状态管理：启动/停止 verifier 容器、查询状态、清理镜像，供外部 facade 调用。
 import { resolveVerifierEndpoints } from "./endpoint-resolution.js";
 import { execFile } from "node:child_process";
 import { constants as fsConstants, promises as fs } from "node:fs";

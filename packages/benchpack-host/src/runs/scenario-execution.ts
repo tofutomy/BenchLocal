@@ -1,3 +1,4 @@
+// 场景执行与多模型调度：五种 execution mode 分发、单场景重复执行、结果合并与 provider 错误分类。
 import type {
   BenchLocalExecutionMode,
   BenchPackManifest,

@@ -1,3 +1,4 @@
+// runtime 资源水合：将 BenchLocal runtime 模块复制到 Bench Pack 安装目录，确保 entrypoint 可正常 import。
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

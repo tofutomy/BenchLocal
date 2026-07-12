@@ -1,3 +1,4 @@
+// manifest verifier 配置解析：从 manifest 声明中提取 verifier spec，解析 mode/url/port 并 bootstrap 默认配置。
 import type {
   BenchLocalVerifierConfig,
   BenchPackManifest,

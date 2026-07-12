@@ -1,3 +1,4 @@
+// 单场景重试与断点续跑：retry 只重跑指定 scenario/model，resume 补齐未完成的场景，均通过 summary lock 保证原子性。
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";

@@ -1,3 +1,4 @@
+// Web manifest 校验：为 web registry 条目生成标准 manifest，或远程获取并校验 manifest 与 registry 身份一致性。
 import type { BenchPackManifest, BenchPackRegistryEntry } from "@benchlocal/core";
 import { getBenchPackManifestType, isBenchPackManifest, isHttpsUrl } from "../inspect/manifest.js";
 

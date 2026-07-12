@@ -1,3 +1,4 @@
+// verifier endpoint 决议：根据 manifest verifier 配置与 mode（docker/cloud/custom）解析出可连接的 endpoint 地址与状态。
 import type { BenchLocalBenchPackConfig, BenchPackManifest, VerifierEndpoint } from "@benchlocal/core";
 import { getManifestVerifiers, getVerifierUrl } from "./verifier-config.js";
 import { probeVerifier } from "./health-check.js";

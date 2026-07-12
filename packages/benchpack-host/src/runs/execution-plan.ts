@@ -1,3 +1,4 @@
+// 执行模式与重复策略：normalize runsPerTest、多数表决合并重复结果、选择代表性输出。
 import type { ScenarioResult } from "@benchlocal/core";
 
 /** 仅接受 UI 与配置协议支持的奇数重复次数，非法值安全回退为单次执行。 */

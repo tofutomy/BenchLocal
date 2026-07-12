@@ -1,3 +1,4 @@
+// provider HTTP 错误分类与 fetch 捕获：拦截全局 fetch，记录 provider 请求错误，区分可重试/不可重试状态码。
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Agent, setGlobalDispatcher } from "undici";
 

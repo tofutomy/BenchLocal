@@ -1,3 +1,4 @@
+// verifier 健康探测：向 healthcheck 端点发 GET 请求，支持可取消的退避重试等待容器就绪。
 import type { VerifierEndpoint } from "@benchlocal/core";
 import { throwIfAborted, waitForAbortableDelay } from "../shared/abort.js";
 

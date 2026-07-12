@@ -1,3 +1,4 @@
+// 运行产物目录与文件管理：创建 runId 目录、写入 summary/events/host-log、路径安全校验。
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";

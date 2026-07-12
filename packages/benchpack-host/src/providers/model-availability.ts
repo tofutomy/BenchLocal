@@ -1,3 +1,4 @@
+// 模型可用性探测：向 provider /models 端点发请求，校验目标模型是否在线，支持超时与取消。
 import type {
   BenchLocalConfig,
   HostContext,

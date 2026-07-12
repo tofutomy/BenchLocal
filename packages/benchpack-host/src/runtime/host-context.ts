@@ -1,3 +1,4 @@
+// HostContext 组装与资源生命周期：聚合 provider/model/secret/verifier/inference relay，返回 context 与 dispose 函数。
 import path from "node:path";
 import { expandHomePath, type BenchLocalConfig, type BenchPackManifest, type HostContext } from "@benchlocal/core";
 import { createRuntimeModels, createRuntimeProviders, createRuntimeSecrets } from "../providers/model-availability.js";

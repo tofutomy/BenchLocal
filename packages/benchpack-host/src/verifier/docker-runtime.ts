@@ -1,3 +1,4 @@
+// Docker 容器生命周期管理：CLI 探测、镜像构建/拉取、container 启动/停止、端口绑定与 endpoint 决议。
 import { execFile } from "node:child_process";
 import { constants as fsConstants, promises as fs } from "node:fs";
 import net from "node:net";

@@ -1,3 +1,4 @@
+// 安装进度阶段定义与 reporter 辅助：统一各安装入口的 progress event 结构，供 renderer 进度 UI 消费。
 export const BENCH_PACK_INSTALL_PHASES = [
   "resolving",
   "downloading",

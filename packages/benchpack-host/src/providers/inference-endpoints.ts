@@ -1,3 +1,4 @@
+// 推理端点 HTTP relay：为 Bench Pack 暴露本地 inference server，转发请求到上游 provider 并流式回传。
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";

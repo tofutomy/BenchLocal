@@ -1,3 +1,4 @@
+// 制品下载、解包与暂存：archive/tarball 下载到临时目录，校验后解包到 staging，供 install-pipeline 提交到 versions。
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";

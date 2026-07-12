@@ -1,3 +1,4 @@
+// Bench Pack 动态加载：解析安装路径、校验 manifest 兼容性、import entrypoint 并 normalize runtime surface。
 import path from "node:path";
 import type { BenchLocalConfig, BenchPackManifest, BenchPackRuntime } from "@benchlocal/core";
 import { resolveConfiguredBenchPackRoot } from "../inspect/configured-packs.js";

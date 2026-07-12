@@ -1,3 +1,4 @@
+// run 主入口编排：加载 Bench Pack、校验 model/verifier、按 execution mode 分发场景执行、写入 summary 与 history。
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
