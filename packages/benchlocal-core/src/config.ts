@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
+import { migrateConfigV1 } from "./migrations/config-v1.js";
 
 export type BenchLocalProviderKind =
   | "openrouter"
@@ -307,33 +308,13 @@ function assertValidHttpUrl(value: string, field: string): void {
 
 function normalizeConfig(raw: unknown): BenchLocalConfig {
   const defaults = createDefaultConfig();
-  const rawRecord = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  // 持久化输入先迁移历史形状，再补默认值和校验当前 schema。
+  const rawRecord = migrateConfigV1(raw);
   const parsed = ConfigSchema.parse({
     ...rawRecord,
-    default_benchpack:
-      typeof rawRecord.default_benchpack === "string"
-        ? rawRecord.default_benchpack
-        : typeof rawRecord.default_bench_pack === "string"
-          ? rawRecord.default_bench_pack
-        : typeof rawRecord.default_plugin === "string"
-          ? rawRecord.default_plugin
-          : undefined,
-    benchpack_storage_dir:
-      typeof rawRecord.benchpack_storage_dir === "string"
-        ? rawRecord.benchpack_storage_dir
-        : typeof rawRecord.bench_pack_storage_dir === "string"
-          ? rawRecord.bench_pack_storage_dir
-        : typeof rawRecord.plugin_storage_dir === "string"
-          ? rawRecord.plugin_storage_dir
-          : undefined,
-    benchpacks:
-      rawRecord.benchpacks && typeof rawRecord.benchpacks === "object"
-        ? rawRecord.benchpacks
-        : rawRecord.bench_packs && typeof rawRecord.bench_packs === "object"
-          ? rawRecord.bench_packs
-        : rawRecord.plugins && typeof rawRecord.plugins === "object"
-          ? rawRecord.plugins
-          : undefined
+    default_benchpack: rawRecord.default_benchpack,
+    benchpack_storage_dir: rawRecord.benchpack_storage_dir,
+    benchpacks: rawRecord.benchpacks
   });
   const normalizedProviders = Object.fromEntries(
     Object.entries(parsed.providers).map(([providerId, provider]) => {
@@ -373,7 +354,7 @@ function normalizeConfig(raw: unknown): BenchLocalConfig {
         benchPackId,
         {
           ...benchPack,
-          verifiers: benchPack.verifiers ?? benchPack.sidecars
+          verifiers: benchPack.verifiers
         }
       ])
     )

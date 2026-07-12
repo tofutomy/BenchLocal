@@ -4,6 +4,7 @@ import path from "node:path";
 import { z } from "zod";
 import { getBenchLocalHome } from "./config.js";
 import type { GenerationRequest } from "./protocol.js";
+import { migrateWorkspaceV1 } from "./migrations/workspace-v1.js";
 
 export type BenchLocalExecutionMode =
   | "serial"
@@ -97,19 +98,8 @@ const WorkspaceTabSchema = z.object({
     })
     .default({}),
   executionMode: z
-    .enum(["serial", "serial_by_model", "parallel_by_model", "parallel_by_test_case", "parallel_models", "parallel_scenarios", "full_parallel"])
-    .default("parallel_by_test_case")
-    .transform((value) => {
-      if (value === "parallel_models") {
-        return "parallel_by_model";
-      }
-
-      if (value === "parallel_scenarios") {
-        return "parallel_by_test_case";
-      }
-
-      return value;
-    }),
+    .enum(["serial", "serial_by_model", "parallel_by_model", "parallel_by_test_case", "full_parallel"])
+    .default("parallel_by_test_case"),
   runsPerTest: z.number().int().min(1).max(10).default(1),
   createdAt: z.string().trim().min(1),
   updatedAt: z.string().trim().min(1)
@@ -180,29 +170,8 @@ export function createDefaultWorkspaceState(defaultBenchPack = ""): BenchLocalWo
 
 function normalizeWorkspaceState(raw: unknown, defaultBenchPack = ""): BenchLocalWorkspaceState {
   const defaults = createDefaultWorkspaceState(defaultBenchPack);
-  const rawRecord = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-  const rawTabs = rawRecord.tabs && typeof rawRecord.tabs === "object" ? (rawRecord.tabs as Record<string, unknown>) : {};
-  const parsed = WorkspaceStateSchema.parse({
-    ...rawRecord,
-    tabs: Object.fromEntries(
-      Object.entries(rawTabs).map(([tabId, value]) => {
-        if (typeof value !== "object" || value === null) {
-          return [tabId, value];
-        }
-
-        const tabRecord = value as Record<string, unknown>;
-        return [
-          tabId,
-          {
-            ...tabRecord,
-            benchPackId:
-              tabRecord.benchPackId ??
-              (typeof tabRecord.pluginId === "string" || tabRecord.pluginId === null ? tabRecord.pluginId : null)
-          }
-        ];
-      })
-    )
-  });
+  // 旧字段只在 migration 中处理，下面仅归一化和校验当前 v1 结构。
+  const parsed = WorkspaceStateSchema.parse(migrateWorkspaceV1(raw));
 
   const workspaces = { ...parsed.workspaces };
   const tabs = { ...parsed.tabs };
