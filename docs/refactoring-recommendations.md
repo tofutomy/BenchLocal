@@ -335,6 +335,12 @@ packages/benchpack-host/src/
 
 ## 优先级 P2：协议与兼容性治理
 
+实施状态（2026-07-12）：已完成。
+
+- 已新增 `packages/benchlocal-core/src/migrations/` 目录，`config-v1.ts` 与 `workspace-v1.ts` 分别处理历史配置别名与 workspace tab 旧字段迁移。
+- 迁移已接入 `config.ts` 与 `workspaces.ts` 的解析流程，遵循：parse raw → migrate legacy → validate → normalize defaults。
+- 已补充 `migrations.test.ts` 覆盖别名迁移、canonical 字段优先与输入不可变。
+
 ### 9. 给 core schema 增加显式 migration 层
 
 现状：
@@ -361,6 +367,12 @@ packages/benchlocal-core/src/migrations/
 
 - 老用户本地 `~/.benchlocal` 数据升级风险可控。
 - 以后引入 `schema_version: 2` 不需要重写当前 normalize。
+
+实施状态（2026-07-12）：已完成。
+
+- `ARCHITECTURE.md` 已更新 public package boundaries，明确 `@benchlocal/core`、`@benchlocal/sdk`、`@benchlocal/web-sdk` 为公开稳定包。
+- 三个 public 包均已增加 `test-d` 类型测试，并通过根 `typecheck:api` 脚本在 CI 中运行。
+- 三个 public 包 `package.json` 均使用 `exports` 限定仅根入口，防止深层路径被误用为稳定 API；`@benchlocal/benchpack-host` 保持 private。
 
 ### 10. 明确 public/private package 边界
 
