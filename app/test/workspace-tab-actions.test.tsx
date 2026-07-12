@@ -19,6 +19,7 @@ function createWorkspaceState(): BenchLocalWorkspaceState {
       "workspace-1": {
         id: "workspace-1",
         name: "My Workspace",
+        modelSelections: [],
         tabIds: ["tab-1"],
         activeTabId: "tab-1",
         createdAt: "2026-07-10T00:00:00.000Z",

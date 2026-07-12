@@ -98,6 +98,16 @@ export class WorkspaceService {
       const now = new Date().toISOString();
       const tabId = `tab-${randomUUID()}`;
       const benchPackId = input.benchPackId?.trim() || null;
+      const sharedSelections = input.modelSelections
+        ? normalizeModelSelections(input.modelSelections, config)
+        : workspace.modelSelections ?? [];
+
+      if (input.modelSelections) {
+        workspace.modelSelections = sharedSelections;
+        for (const workspaceTabId of workspace.tabIds) {
+          if (state.tabs[workspaceTabId]) state.tabs[workspaceTabId].modelSelections = structuredClone(sharedSelections);
+        }
+      }
 
       state.tabs[tabId] = {
         id: tabId,
@@ -105,7 +115,8 @@ export class WorkspaceService {
         benchPackId,
         loadedRunId: null,
         focusedScenarioId: null,
-        modelSelections: normalizeModelSelections(input.modelSelections ?? [], config),
+        modelSelections: structuredClone(sharedSelections),
+        operationModelIds: sharedSelections.map((selection) => selection.modelId),
         samplingOverrides: {},
         executionMode: "parallel_by_test_case",
         runsPerTest: 1,
@@ -142,7 +153,18 @@ export class WorkspaceService {
 
       if (patch.title !== undefined) tab.title = patch.title.trim() || "New Tab";
       if (patch.focusedScenarioId !== undefined) tab.focusedScenarioId = patch.focusedScenarioId?.trim() || null;
-      if (patch.modelSelections !== undefined) tab.modelSelections = normalizeModelSelections(patch.modelSelections, config);
+      if (patch.modelSelections !== undefined) {
+        const workspace = Object.values(state.workspaces).find((candidate) => candidate.tabIds.includes(tabId));
+        const selections = normalizeModelSelections(patch.modelSelections, config);
+        if (workspace) {
+          workspace.modelSelections = selections;
+          for (const workspaceTabId of workspace.tabIds) {
+            if (state.tabs[workspaceTabId]) state.tabs[workspaceTabId].modelSelections = structuredClone(selections);
+          }
+        } else {
+          tab.modelSelections = selections;
+        }
+      }
       if (patch.samplingOverrides !== undefined) tab.samplingOverrides = patch.samplingOverrides;
       if (patch.executionMode !== undefined) tab.executionMode = patch.executionMode;
       if (patch.runsPerTest !== undefined) tab.runsPerTest = normalizeRunsPerTest(patch.runsPerTest);
@@ -179,11 +201,21 @@ export class WorkspaceService {
 
       if (!tab) throw new Error(`Tab "${tabId}" was not found.`);
 
-      tab.modelSelections = input.selections
+      const selections = input.selections
         ? normalizeModelSelections(input.selections, config)
         : normalizeModelIds(input.modelIds ?? [], config);
-      tab.loadedRunId = null;
-      tab.updatedAt = new Date().toISOString();
+      const workspace = Object.values(state.workspaces).find((candidate) => candidate.tabIds.includes(tabId));
+      if (workspace) {
+        workspace.modelSelections = selections;
+        workspace.updatedAt = new Date().toISOString();
+        for (const workspaceTabId of workspace.tabIds) {
+          const workspaceTab = state.tabs[workspaceTabId];
+          if (!workspaceTab) continue;
+          workspaceTab.modelSelections = structuredClone(selections);
+          workspaceTab.loadedRunId = null;
+          workspaceTab.updatedAt = workspace.updatedAt;
+        }
+      }
       return state;
     });
   }
@@ -205,6 +237,9 @@ export class WorkspaceService {
     if (modelIds.size === 0) return this.loadWorkspaceState();
 
     return this.mutateWorkspaceState((state) => {
+      for (const workspace of Object.values(state.workspaces)) {
+        workspace.modelSelections = workspace.modelSelections.filter((selection) => !modelIds.has(selection.modelId));
+      }
       for (const tab of Object.values(state.tabs)) {
         tab.modelSelections = tab.modelSelections.filter((selection) => !modelIds.has(selection.modelId));
       }
@@ -216,6 +251,11 @@ export class WorkspaceService {
     if (previousModelId === nextModelId) return this.loadWorkspaceState();
 
     return this.mutateWorkspaceState((state) => {
+      for (const workspace of Object.values(state.workspaces)) {
+        workspace.modelSelections = workspace.modelSelections.map((selection) =>
+          selection.modelId === previousModelId ? { ...selection, modelId: nextModelId } : selection
+        );
+      }
       for (const tab of Object.values(state.tabs)) {
         tab.modelSelections = tab.modelSelections.map((selection) =>
           selection.modelId === previousModelId ? { ...selection, modelId: nextModelId } : selection

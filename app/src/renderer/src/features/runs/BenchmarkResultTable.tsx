@@ -19,6 +19,12 @@ type ResultTableModel = BenchLocalModelConfig & {
   alias?: string;
 };
 
+export type ModelHistoryOption = {
+  runId: string;
+  startedAt: string;
+  completedAt: string;
+};
+
 
 
 function modelAvailabilityChipClass(availability: ModelAvailabilityView): string {
@@ -54,6 +60,12 @@ function modelAvailabilityTitle(availability: ModelAvailabilityView): string {
   return availability.details ? `${label}: ${availability.details}` : label;
 }
 
+function formatModelHistoryTime(value: string): string {
+  const date = new Date(value);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 export function BenchmarkResultTable({
   tabId,
   benchPackId,
@@ -61,6 +73,10 @@ export function BenchmarkResultTable({
   selectedModels,
   operationModelIds,
   onChangeOperationModelIds,
+  modelHistoryOptionsById,
+  loadingModelHistories,
+  selectedHistoryRunIds,
+  onSelectModelHistory,
   modelAvailabilityById,
   checkingModelAvailability,
   runSummary,
@@ -95,6 +111,10 @@ export function BenchmarkResultTable({
   selectedModels: ResultTableModel[];
   operationModelIds: string[];
   onChangeOperationModelIds: (modelIds: string[]) => void;
+  modelHistoryOptionsById: Record<string, ModelHistoryOption[]>;
+  loadingModelHistories: boolean;
+  selectedHistoryRunIds: Record<string, string>;
+  onSelectModelHistory: (modelId: string, runId: string) => void;
   modelAvailabilityById: Record<string, ModelAvailability>;
   checkingModelAvailability: Record<string, true>;
   runSummary: BenchPackRunSummary | null;
@@ -171,7 +191,7 @@ export function BenchmarkResultTable({
         onClick={() =>
           onOpenDetail({
             tabId,
-            runId: liveRun?.runId ?? runSummary?.runId ?? null,
+            runId: liveRun?.runId ?? selectedHistoryRunIds[modelId] ?? runSummary?.runId ?? null,
             benchPackId,
             modelId,
             modelLabel: model?.displayLabel ?? model?.label,
@@ -210,6 +230,7 @@ export function BenchmarkResultTable({
             <table className="result-table">
               <colgroup>
                 <col className="model-column" />
+                <col className="history-column" />
                 {scenarios.map((scenario) => (
                   <col key={scenario.id} />
                 ))}
@@ -230,6 +251,7 @@ export function BenchmarkResultTable({
                       <span>Model</span>
                     </label>
                   </th>
+                  <th className="history-column-heading">History</th>
                   {scenarios.map((scenario) => (
                     <th
                       key={scenario.id}
@@ -299,6 +321,26 @@ export function BenchmarkResultTable({
                             </div>
                           )}
                         </div>
+                      </td>
+                      <td className="model-history-cell">
+                        <select
+                          className="model-history-select"
+                          aria-label={`Select history for ${model.displayLabel}`}
+                          value={selectedHistoryRunIds[model.id] ?? ""}
+                          disabled={hasLiveActivity || loadingModelHistories || (modelHistoryOptionsById[model.id]?.length ?? 0) === 0}
+                          onChange={(event) => onSelectModelHistory(model.id, event.target.value)}
+                        >
+                          {loadingModelHistories ? (
+                            <option value="">Loading history...</option>
+                          ) : (modelHistoryOptionsById[model.id]?.length ?? 0) === 0 ? (
+                            <option value="">No history for this model</option>
+                          ) : null}
+                          {(modelHistoryOptionsById[model.id] ?? []).map((option) => (
+                            <option key={option.runId} value={option.runId}>
+                              {formatModelHistoryTime(option.startedAt)}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       {scenarios.map((scenario) => (
                         <td

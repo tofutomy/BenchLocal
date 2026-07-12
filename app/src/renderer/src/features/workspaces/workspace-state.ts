@@ -40,6 +40,7 @@ export function createWorkspaceWithEmptyTab({
     workspace: {
       id: workspaceId,
       name,
+      modelSelections: [],
       tabIds: [tabId],
       activeTabId: tabId,
       createdAt: now,

@@ -195,11 +195,12 @@ export function groupRetryCellsForExecutionMode(
   scenarios: ScenarioMeta[],
   models: ResolvedTabModel[]
 ): RetryScenarioCell[][] {
-  const cellSet = new Set(cells.map((cell) => getCellKey(cell.modelId, cell.scenarioId)));
+  const cellsByKey = new Map(cells.map((cell) => [getCellKey(cell.modelId, cell.scenarioId), cell]));
   const scenarioOrder = scenarios.map((scenario) => scenario.id);
   const modelOrder = models.map((model) => model.id);
+  // 保留 runId，使来自不同模型历史快照的重试仍写回各自的原始运行。
   const cellFor = (modelId: string, scenarioId: string): RetryScenarioCell | null =>
-    cellSet.has(getCellKey(modelId, scenarioId)) ? { modelId, scenarioId } : null;
+    cellsByKey.get(getCellKey(modelId, scenarioId)) ?? null;
   const singletonByScenarioThenModel = scenarioOrder.flatMap((scenarioId) =>
     modelOrder.flatMap((modelId) => {
       const cell = cellFor(modelId, scenarioId);

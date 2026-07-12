@@ -11,6 +11,8 @@ export function AppTabStrip({
   tabs,
   inspections,
   activeTabId,
+  overviewOpen,
+  onOpenOverview,
   activeRuns,
   liveRuns,
   editingTab,
@@ -37,6 +39,8 @@ export function AppTabStrip({
   tabs: BenchLocalWorkspaceTab[];
   inspections: BenchPackInspection[];
   activeTabId: string | null;
+  overviewOpen: boolean;
+  onOpenOverview: () => void;
   activeRuns: Record<string, unknown>;
   liveRuns: Record<string, LiveRunState>;
   editingTab: EditingTabState;
@@ -72,6 +76,9 @@ export function AppTabStrip({
         />
       ) : null}
       <div ref={tabStripRef} className="tab-strip">
+        <button type="button" className={`tab-chip overview-tab-chip${overviewOpen ? " is-active" : ""}`} onClick={onOpenOverview}>
+          Overview
+        </button>
         {tabs.map((tab) => {
           const inspection = inspections.find((candidate) => candidate.id === tab.benchPackId);
           const isTabRunning = Boolean(activeRuns[tab.id]);

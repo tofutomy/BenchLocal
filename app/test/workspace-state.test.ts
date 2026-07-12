@@ -30,6 +30,7 @@ describe("workspace state factories", () => {
 
     expect(workspace.tabIds).toEqual([tab.id]);
     expect(workspace.activeTabId).toBe(tab.id);
+    expect(workspace.modelSelections).toEqual([]);
     expect(tab.benchPackId).toBeNull();
   });
 });

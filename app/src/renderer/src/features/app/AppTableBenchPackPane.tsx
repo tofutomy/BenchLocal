@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useEffect, type Dispatch, type SetStateAction } from "react";
 import type {
   BenchLocalConfig,
   BenchLocalWorkspaceState,
@@ -57,6 +57,7 @@ export function AppTableBenchPackPane({
   setSettingsTab,
   setSettingsOpen,
   loadVerifierStatuses,
+  loadHistoryForBenchPack,
   refreshModelAvailability,
   clearLoadedHistoryRun,
   resetTabRunState,
@@ -91,6 +92,7 @@ export function AppTableBenchPackPane({
   setSettingsTab: (tab: SettingsTab) => void;
   setSettingsOpen: (open: boolean) => void;
   loadVerifierStatuses: () => Promise<void>;
+  loadHistoryForBenchPack: (benchPackId: string) => Promise<void>;
   refreshModelAvailability: (models: ResolvedTabModel[]) => Promise<void>;
   clearLoadedHistoryRun: (tabId: string) => void;
   resetTabRunState: (tab: BenchLocalWorkspaceTab) => void;
@@ -107,6 +109,11 @@ export function AppTableBenchPackPane({
   ) => Promise<void>;
   setDetailModal: (detail: DetailModalState) => void;
 }) {
+  useEffect(() => {
+    // 进入 Tab 时主动加载历史，模型级历史选择器不再依赖用户先打开历史弹窗。
+    void loadHistoryForBenchPack(activeInspection.id);
+  }, [activeInspection.id]);
+
   return (
     <div className="tabbed-workspace-pane table-benchpack-pane is-active">
       <BenchmarkSection
@@ -115,6 +122,16 @@ export function AppTableBenchPackPane({
         verifierStatus={activeVerifierStatus}
         runBlocker={activeRunBlocker}
         selectedModels={activeDisplayModels}
+        persistedOperationModelIds={activeTab.operationModelIds}
+        onChangeOperationModelIds={(modelIds) =>
+          updateWorkspaceState((current) => {
+            const tab = current.tabs[activeTab.id];
+            if (!tab) return current;
+            tab.operationModelIds = modelIds;
+            tab.updatedAt = new Date().toISOString();
+            return current;
+          })
+        }
         modelAvailabilityById={modelAvailabilityById}
         checkingModelAvailability={checkingModelAvailability}
         providers={draft.providers}

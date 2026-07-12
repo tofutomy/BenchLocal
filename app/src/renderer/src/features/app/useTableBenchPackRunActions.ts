@@ -21,10 +21,8 @@ import {
   type RetryScenarioCell
 } from "../runs/run-utils";
 import {
-  buildHistoryModelSelections,
   buildReplayGroups,
   groupRetryCellsForExecutionMode,
-  normalizeTabModelSelections,
   resolveHistoryModels,
   resolveTabModels
 } from "../runs/run-state";
@@ -211,16 +209,13 @@ export function useTableBenchPackRunActions({
 
     const benchPackId = tab.benchPackId;
     const previousLoadedHistory = loadedHistoryRuns[tab.id] ?? null;
-    const previousTabModelSelections = structuredClone(tab.modelSelections);
     const previousExecutionMode = tab.executionMode;
 
     if (hasUnsavedChanges && !(await save())) return;
 
-    const historicalSelections = buildHistoryModelSelections(runSummary, draft.models);
     updateWorkspaceState((current) => {
       const nextTab = current.tabs[tab.id];
       if (!nextTab) return current;
-      nextTab.modelSelections = normalizeTabModelSelections(historicalSelections);
       nextTab.executionMode = runSummary.executionMode ?? nextTab.executionMode;
       nextTab.updatedAt = new Date().toISOString();
       return current;
@@ -258,7 +253,6 @@ export function useTableBenchPackRunActions({
       updateWorkspaceState((current) => {
         const nextTab = current.tabs[tab.id];
         if (!nextTab) return current;
-        nextTab.modelSelections = structuredClone(previousTabModelSelections);
         nextTab.executionMode = previousExecutionMode;
         nextTab.updatedAt = new Date().toISOString();
         return current;
@@ -423,7 +417,7 @@ export function useTableBenchPackRunActions({
         await window.benchlocal.benchPacks.retryScenario({
           tabId: tab.id,
           benchPackId: benchPackId,
-          runId: summary.runId,
+          runId: cell.runId ?? summary.runId,
           scenarioId: cell.scenarioId,
           modelId: cell.modelId,
           runsPerTest: normalizeRunsPerTest(tab.runsPerTest),

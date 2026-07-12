@@ -48,7 +48,9 @@ export function useWorkspaceTabActions({
       const tabId = `tab-${crypto.randomUUID()}`;
       current.tabs[tabId] = {
         ...createEmptyWorkspaceTab({ id: tabId, now, title: createTabTitle(benchPackId, benchPackInspections) }),
-        benchPackId
+        benchPackId,
+        modelSelections: structuredClone(workspace.modelSelections ?? []),
+        operationModelIds: (workspace.modelSelections ?? []).map((selection) => selection.modelId)
       };
       workspace.tabIds.push(tabId);
       workspace.activeTabId = tabId;
@@ -75,6 +77,7 @@ export function useWorkspaceTabActions({
         loadedRunId: null,
         focusedScenarioId: tab.focusedScenarioId,
         modelSelections: structuredClone(tab.modelSelections),
+        operationModelIds: structuredClone(tab.operationModelIds ?? []),
         samplingOverrides: structuredClone(tab.samplingOverrides ?? {}),
         executionMode: tab.executionMode,
         runsPerTest: normalizeRunsPerTest(tab.runsPerTest),

@@ -1,0 +1,38 @@
+.workspace-overview {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 28px;
+  overflow: auto;
+}
+
+.workspace-overview > * {
+  flex: 0 0 auto;
+  width: 100%;
+}
+.overview-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.overview-header h2, .overview-section h3 { margin: 0; }
+.overview-section { margin-top: 26px; }
+.overview-section > h3 { margin-bottom: 12px; font-size: 1rem; }
+.overview-check-list { display: flex; flex-wrap: wrap; gap: 10px; }
+.overview-check-item { display: inline-flex; align-items: center; gap: 8px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-raised); cursor: pointer; }
+.overview-check-item input { accent-color: var(--accent); }
+.overview-score-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+.overview-score-table th, .overview-score-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+.overview-score-table th:nth-child(1), .overview-score-table td:nth-child(1) { text-align: center; width: 56px; }
+.overview-score-table th:nth-child(2), .overview-score-table td:nth-child(2) { text-align: left; font-weight: 600; }
+.overview-score-table thead th { color: var(--muted); font-size: .76rem; }
+.overview-score-table tr.is-average { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.overview-empty { min-height: 100px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+.overview-chart-section { padding-bottom: 28px; }
+.overview-radar-wrap { display: grid; justify-items: center; }
+.overview-radar { width: min(100%, 760px); height: auto; overflow: visible; }
+.radar-grid, .radar-axis { fill: none; stroke: var(--border); stroke-width: 1; }
+.radar-axis { opacity: .8; }
+.radar-label { fill: var(--text); font-size: 12px; dominant-baseline: middle; }
+.radar-series { fill: currentColor; fill-opacity: .1; stroke: currentColor; stroke-width: 2; }
+.radar-point { fill: currentColor; stroke: var(--surface); stroke-width: 1.5; }
+.overview-radar-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+.overview-radar-legend span { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; }
+.overview-radar-legend i { width: 10px; height: 10px; border-radius: 50%; }
+.overview-tab-chip { flex: 0 0 auto; font-weight: 700; }
+@media (max-width: 720px) { .workspace-overview { padding: 18px; } .overview-header { align-items: flex-start; flex-direction: column; } }

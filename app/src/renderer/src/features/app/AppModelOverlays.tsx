@@ -228,8 +228,24 @@ export function AppModelOverlays({
                 return current;
               }
 
-              tab.modelSelections = nextSelections;
-              tab.updatedAt = new Date().toISOString();
+              const workspace = Object.values(current.workspaces).find((candidate) =>
+                candidate.tabIds.includes(tabModelsModal.tabId)
+              );
+              const updatedAt = new Date().toISOString();
+              if (workspace) {
+                // 模型对比列表属于 Workspace，所有 Tab 同步使用同一份选择。
+                workspace.modelSelections = nextSelections;
+                workspace.updatedAt = updatedAt;
+                for (const tabId of workspace.tabIds) {
+                  const workspaceTab = current.tabs[tabId];
+                  if (!workspaceTab) continue;
+                  workspaceTab.modelSelections = structuredClone(nextSelections);
+                  workspaceTab.updatedAt = updatedAt;
+                }
+              } else {
+                tab.modelSelections = nextSelections;
+                tab.updatedAt = updatedAt;
+              }
               return current;
             });
 
@@ -286,13 +302,29 @@ export function AppModelOverlays({
                 return current;
               }
 
-              tab.modelSelections = upsertTabModelAlias(
+              const nextSelections = upsertTabModelAlias(
                 tab,
                 draft.models,
                 modelAliasModal.modelId,
                 modelAliasModal.alias
               );
-              tab.updatedAt = new Date().toISOString();
+              const workspace = Object.values(current.workspaces).find((candidate) =>
+                candidate.tabIds.includes(modelAliasModal.tabId)
+              );
+              const updatedAt = new Date().toISOString();
+              if (workspace) {
+                workspace.modelSelections = nextSelections;
+                workspace.updatedAt = updatedAt;
+                for (const tabId of workspace.tabIds) {
+                  const workspaceTab = current.tabs[tabId];
+                  if (!workspaceTab) continue;
+                  workspaceTab.modelSelections = structuredClone(nextSelections);
+                  workspaceTab.updatedAt = updatedAt;
+                }
+              } else {
+                tab.modelSelections = nextSelections;
+                tab.updatedAt = updatedAt;
+              }
               return current;
             });
 

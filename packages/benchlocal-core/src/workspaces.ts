@@ -25,6 +25,7 @@ export type BenchLocalWorkspaceTab = {
   loadedRunId?: string | null;
   focusedScenarioId: string | null;
   modelSelections: BenchLocalWorkspaceTabModelSelection[];
+  operationModelIds?: string[];
   samplingOverrides?: GenerationRequest;
   executionMode: BenchLocalExecutionMode;
   runsPerTest: number;
@@ -35,6 +36,8 @@ export type BenchLocalWorkspaceTab = {
 export type BenchLocalWorkspace = {
   id: string;
   name: string;
+  modelSelections: BenchLocalWorkspaceTabModelSelection[];
+  overview?: { selectedTabIds: string[]; selectedSeriesIds: string[] };
   tabIds: string[];
   activeTabId: string | null;
   createdAt: string;
@@ -69,6 +72,7 @@ const WorkspaceTabSchema = z.object({
       })
     )
     .default([]),
+  operationModelIds: z.array(z.string().trim().min(1)).default([]),
   samplingOverrides: z
     .object({
       temperature: z.number().optional(),
@@ -108,6 +112,18 @@ const WorkspaceTabSchema = z.object({
 const WorkspaceSchema = z.object({
   id: z.string().trim().min(1),
   name: z.string().trim().min(1),
+  modelSelections: z
+    .array(
+      z.object({
+        modelId: z.string().trim().min(1),
+        alias: z.string().trim().min(1).optional()
+      })
+    )
+    .default([]),
+  overview: z.object({
+    selectedTabIds: z.array(z.string().trim().min(1)).default([]),
+    selectedSeriesIds: z.array(z.string().trim().min(1)).default([])
+  }).default({ selectedTabIds: [], selectedSeriesIds: [] }),
   tabIds: z.array(z.string().trim().min(1)).default([]),
   activeTabId: z.string().trim().min(1).nullable(),
   createdAt: z.string().trim().min(1),
@@ -144,6 +160,7 @@ export function createDefaultWorkspaceState(defaultBenchPack = ""): BenchLocalWo
       [workspaceId]: {
         id: workspaceId,
         name: "My Workspace",
+        modelSelections: [],
         tabIds: [tabId],
         activeTabId: tabId,
         createdAt: now,
@@ -158,6 +175,7 @@ export function createDefaultWorkspaceState(defaultBenchPack = ""): BenchLocalWo
         loadedRunId: null,
         focusedScenarioId: null,
         modelSelections: [],
+        operationModelIds: [],
         samplingOverrides: {},
         executionMode: "parallel_by_test_case",
         runsPerTest: 1,
@@ -180,11 +198,24 @@ function normalizeWorkspaceState(raw: unknown, defaultBenchPack = ""): BenchLoca
   for (const [workspaceId, workspace] of Object.entries(workspaces)) {
     const validTabIds = workspace.tabIds.filter((tabId) => tabs[tabId]);
     const activeTabId = workspace.activeTabId && validTabIds.includes(workspace.activeTabId) ? workspace.activeTabId : validTabIds[0] ?? null;
+    // 旧版本按 Tab 保存模型；首次读取时按 Tab 顺序合并为 Workspace 共享列表。
+    const legacySelections = validTabIds.flatMap((tabId) => tabs[tabId]?.modelSelections ?? []);
+    const sourceSelections = workspace.modelSelections.length > 0 ? workspace.modelSelections : legacySelections;
+    const seenModelIds = new Set<string>();
+    const modelSelections = sourceSelections.filter((selection) => {
+      if (!selection.modelId || seenModelIds.has(selection.modelId)) return false;
+      seenModelIds.add(selection.modelId);
+      return true;
+    });
     workspaces[workspaceId] = {
       ...workspace,
+      modelSelections,
       tabIds: validTabIds,
       activeTabId
     };
+    for (const tabId of validTabIds) {
+      tabs[tabId] = { ...tabs[tabId], modelSelections: structuredClone(modelSelections) };
+    }
   }
 
   for (const [tabId, tab] of Object.entries(tabs)) {

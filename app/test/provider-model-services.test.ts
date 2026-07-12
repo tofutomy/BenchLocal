@@ -59,7 +59,10 @@ describe("provider and model services", () => {
     const created = await workspaceService.createWorkspaceTab(workspaceId, {});
     const secondTabId = created.state.workspaces[workspaceId].activeTabId!;
     await workspaceService.selectTabModels(originalTabId, { modelIds: ["local-model"] });
-    await workspaceService.selectTabModels(secondTabId, { modelIds: ["local-model"] });
+
+    const sharedWorkspace = await workspaceService.loadWorkspaceState();
+    expect(sharedWorkspace.state.tabs[secondTabId].modelSelections).toEqual([{ modelId: "local-model" }]);
+    expect(sharedWorkspace.state.workspaces[workspaceId].modelSelections).toEqual([{ modelId: "local-model" }]);
 
     await modelService.updateModel("local-model", { id: "renamed-model" });
 

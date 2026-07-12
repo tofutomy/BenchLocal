@@ -1,4 +1,4 @@
-import type { Dispatch, MutableRefObject, ReactNode, RefObject, SetStateAction } from "react";
+import { useState, type Dispatch, type MutableRefObject, type ReactNode, type RefObject, type SetStateAction } from "react";
 import type { BenchLocalWorkspaceTab, BenchPackInspection } from "@core";
 import type { LiveRunState } from "../runs/run-utils";
 import type { TabContextMenuState, WorkspaceContextMenuState } from "../workspaces/WorkspaceContextMenus";
@@ -24,6 +24,7 @@ export function AppTabbedWorkspace({
   webPanes,
   tablePane,
   emptyPane,
+  overviewPane,
   onWheel,
   onDropTab,
   onStartEditingTab,
@@ -54,6 +55,7 @@ export function AppTabbedWorkspace({
   webPanes: ReactNode;
   tablePane: ReactNode;
   emptyPane: ReactNode;
+  overviewPane: ReactNode;
   onWheel: (event: React.WheelEvent<HTMLDivElement>) => void;
   onDropTab: (sourceTabId: string, targetTabId: string) => void;
   onStartEditingTab: (tabId: string, title: string) => void;
@@ -68,6 +70,7 @@ export function AppTabbedWorkspace({
   setWorkspaceContextMenu: Dispatch<SetStateAction<WorkspaceContextMenuState>>;
   setTabContextMenu: Dispatch<SetStateAction<TabContextMenuState>>;
 }) {
+  const [overviewOpen, setOverviewOpen] = useState(false);
   const showTablePane = activeInspection && activeTab && (activeInspection.manifest?.type ?? "table") !== "web";
 
   return (
@@ -75,13 +78,15 @@ export function AppTabbedWorkspace({
       <AppTabStrip
         tabs={tabs}
         inspections={inspections}
-        activeTabId={activeTab?.id ?? null}
+        activeTabId={overviewOpen ? null : activeTab?.id ?? null}
+        overviewOpen={overviewOpen}
+        onOpenOverview={() => setOverviewOpen(true)}
         activeRuns={activeRuns}
         liveRuns={liveRuns}
         editingTab={editingTab}
         draggedTabId={draggedTabId}
         tabStripOverflow={tabStripOverflow}
-        activeTabMask={activeTabMask}
+        activeTabMask={overviewOpen ? null : activeTabMask}
         tabStripShellRef={tabStripShellRef}
         tabStripRef={tabStripRef}
         onTabChipRef={(tabId, element) => {
@@ -105,7 +110,10 @@ export function AppTabbedWorkspace({
         }
         onCommitEditingTab={onCommitEditingTab}
         onCancelEditingTab={onCancelEditingTab}
-        onActivateTab={onActivateTab}
+        onActivateTab={(tabId) => {
+          setOverviewOpen(false);
+          onActivateTab(tabId);
+        }}
         onOpenTabContextMenu={({ tabId, tabTitle, x, y }) => {
           setWorkspaceContextMenu(null);
           setTabContextMenu({ tabId, tabTitle, x, y });
@@ -116,12 +124,12 @@ export function AppTabbedWorkspace({
       />
 
       <div className="tabbed-workspace-content">
-        {webPanes}
-        {activeInspection && activeTab ? (
+        {overviewOpen ? overviewPane : webPanes}
+        {!overviewOpen && activeInspection && activeTab ? (
           showTablePane ? tablePane : null
-        ) : (
+        ) : !overviewOpen ? (
           <div className="tabbed-workspace-pane is-active">{emptyPane}</div>
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -32,6 +32,7 @@ export type BenchPackRunBlocker = {
 export type RetryScenarioCell = {
   modelId: string;
   scenarioId: string;
+  runId?: string;
 };
 
 export function supportsLiveScenarioColumnFocus(executionMode: BenchLocalExecutionMode): boolean {

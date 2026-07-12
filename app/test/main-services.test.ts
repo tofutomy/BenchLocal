@@ -108,6 +108,9 @@ describe("main process domain services", () => {
 
     expect(createdTab.title).toBe("My Bench Pack");
     expect(createdTab.modelSelections).toEqual([{ modelId: "enabled-model", alias: "Primary" }]);
+    expect(result.state.workspaces[workspaceId].modelSelections).toEqual([
+      { modelId: "enabled-model", alias: "Primary" }
+    ]);
     expect(listener).toHaveBeenCalledOnce();
     expect(listener.mock.calls[0][0]).toMatchObject({
       type: "workspace.updated",

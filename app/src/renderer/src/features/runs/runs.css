@@ -472,6 +472,15 @@
   width: 1%;
 }
 
+.result-table .history-column {
+  width: 190px;
+}
+
+.history-column-heading {
+  min-width: 190px;
+  text-align: left !important;
+}
+
 .result-table th,
 .result-table td {
   padding: 10px 8px;
@@ -489,7 +498,8 @@
 
 .scenario-row-label {
   width: 1%;
-  max-width: min(240px, 24vw);
+  min-width: 240px;
+  max-width: 360px;
   text-align: left;
   position: sticky;
   left: 0;
@@ -585,7 +595,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  max-width: 240px;
+  max-width: 350px;
   width: max-content;
   min-height: 32px;
   padding: 6px 10px;
@@ -617,7 +627,8 @@
 }
 
 .model-cell {
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   justify-content: flex-start;
@@ -644,6 +655,31 @@
 .model-operation-heading input:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.model-history-select {
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+  height: 32px;
+  padding: 0 28px 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--field-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.model-history-cell {
+  min-width: 190px;
+  text-align: left;
+}
+
+.model-history-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .model-badge-wrap {

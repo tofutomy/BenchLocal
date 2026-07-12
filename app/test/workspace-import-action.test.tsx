@@ -11,7 +11,7 @@ afterEach(() => Reflect.deleteProperty(window, "benchlocal"));
 it("remaps imported IDs and accepts the legacy pluginId field", async () => {
   const imported = {
     imported: true,
-    workspace: { id: "old-workspace", name: "Existing", tabIds: ["old-tab"], activeTabId: "old-tab" },
+    workspace: { id: "old-workspace", name: "Existing", modelSelections: [], tabIds: ["old-tab"], activeTabId: "old-tab" },
     tabs: {
       "old-tab": {
         id: "old-tab",
@@ -33,7 +33,7 @@ it("remaps imported IDs and accepts the legacy pluginId field", async () => {
     schema_version: 1,
     activeWorkspaceId: "existing",
     workspaceOrder: ["existing"],
-    workspaces: { existing: { id: "existing", name: "Existing", tabIds: [], activeTabId: null, createdAt: "now", updatedAt: "now" } },
+    workspaces: { existing: { id: "existing", name: "Existing", modelSelections: [], tabIds: [], activeTabId: null, createdAt: "now", updatedAt: "now" } },
     tabs: {}
   } as BenchLocalWorkspaceState;
   const { result } = renderHook(() => {

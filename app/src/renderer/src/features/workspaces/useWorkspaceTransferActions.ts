@@ -63,6 +63,7 @@ export function useWorkspaceTransferActions({ workspaceState, updateWorkspaceSta
           activeTabId: importedWorkspace.activeTabId
             ? tabIdMap.get(importedWorkspace.activeTabId) ?? nextTabIds[0] ?? null
             : nextTabIds[0] ?? null,
+          modelSelections: importedWorkspace.modelSelections ?? nextTabIds.flatMap((tabId) => current.tabs[tabId]?.modelSelections ?? []),
           createdAt: importedWorkspace.createdAt ?? now,
           updatedAt: now
         };

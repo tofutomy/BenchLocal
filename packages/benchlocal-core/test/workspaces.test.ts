@@ -84,6 +84,7 @@ describe("workspace state persistence", () => {
     expect(state.workspaceOrder).toEqual(["workspace-1"]);
     expect(state.workspaces["workspace-1"].tabIds).toEqual(["tab-1"]);
     expect(state.workspaces["workspace-1"].activeTabId).toBe("tab-1");
+    expect(state.workspaces["workspace-1"].modelSelections).toEqual([{ modelId: "model-a" }]);
     expect(state.tabs["tab-1"]).toMatchObject({
       benchPackId: "legacy-pack",
       executionMode: "parallel_by_model",

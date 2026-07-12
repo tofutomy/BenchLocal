@@ -7,6 +7,7 @@ import { AppTableBenchPackPane } from "./features/app/AppTableBenchPackPane";
 import { AppTabbedWorkspace } from "./features/app/AppTabbedWorkspace";
 import { AppSettingsSceneHost } from "./features/app/AppSettingsSceneHost";
 import { AppWebBenchPackPane } from "./features/app/AppWebBenchPackPane";
+import { WorkspaceOverviewPane } from "./features/overview/WorkspaceOverviewPane";
 import { useAppToasts } from "./features/app/useAppToasts";
 import { useAppTheme } from "./features/app/useAppTheme";
 import { useAppUpdates } from "./features/app/useAppUpdates";
@@ -47,7 +48,7 @@ import { useModelDiscovery } from "./features/models/useModelDiscovery";
 import { useModelAvailabilityActions } from "./features/models/useModelAvailabilityActions";
 import type { ResolvedTabModel } from "./features/models/model-config";
 import type { LiveRunState, LoadedHistoryEntry } from "./features/runs/run-utils";
-import { resolveHistoryModels, resolveTabModels } from "./features/runs/run-state";
+import { resolveTabModels } from "./features/runs/run-state";
 import { getRequiredVerifierRunBlocker } from "./features/runs/verifier-status";
 import type { DetailModalState } from "./features/runs/ResultDetailModal";
 import { useLoadedHistoryActions } from "./features/runs/useLoadedHistoryActions";
@@ -264,17 +265,8 @@ export function App() {
     () => (activeTab ? loadedHistoryRuns[activeTab.id] ?? null : null),
     [loadedHistoryRuns, activeTab]
   );
-  const activeDisplayModels = useMemo(() => {
-    if (!draft) {
-      return [];
-    }
-
-    if (activeLoadedHistory) {
-      return resolveHistoryModels(activeRunSummary, draft.models);
-    }
-
-    return activeTabModels;
-  }, [draft, activeLoadedHistory, activeRunSummary, activeTabModels]);
+  // Tab 始终表示长期对比模型集合；加载历史只替换各模型结果，不替换对比列表。
+  const activeDisplayModels = activeTabModels;
   const activeDisplayModelIds = useMemo(
     () => activeDisplayModels.map((model) => model.id).join("\0"),
     [activeDisplayModels]
@@ -1023,6 +1015,7 @@ export function App() {
                             setSettingsTab={setSettingsTab}
                             setSettingsOpen={setSettingsOpen}
                             loadVerifierStatuses={loadVerifierStatuses}
+                            loadHistoryForBenchPack={loadHistoryForBenchPack}
                             refreshModelAvailability={refreshModelAvailability}
                             clearLoadedHistoryRun={clearLoadedHistoryRun}
                             resetTabRunState={resetTabRunState}
@@ -1034,6 +1027,25 @@ export function App() {
                             setDetailModal={setDetailModal}
                           />
                         ) : null
+                      }
+                      overviewPane={
+                        <WorkspaceOverviewPane
+                          tabs={workspaceTabs}
+                          overview={activeWorkspace.overview}
+                          onChangeOverview={(overview) =>
+                            updateWorkspaceState((current) => {
+                              const workspace = current.workspaces[activeWorkspace.id];
+                              if (!workspace) return current;
+                              workspace.overview = overview;
+                              workspace.updatedAt = new Date().toISOString();
+                              return current;
+                            })
+                          }
+                          models={(activeWorkspace.modelSelections ?? []).flatMap((selection) => {
+                            const model = draft.models.find((candidate) => candidate.id === selection.modelId && candidate.enabled);
+                            return model ? [{ ...model, label: selection.alias || model.label }] : [];
+                          })}
+                        />
                       }
                       emptyPane={
                         <AppWorkspaceEmptyState

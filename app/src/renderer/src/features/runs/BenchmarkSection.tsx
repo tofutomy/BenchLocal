@@ -10,7 +10,7 @@ import type {
 import type { BenchPackVerifierStatus } from "../../../../shared/desktop-api";
 import { getTableScrollbarThumbWidth } from "../../shared/components/settings-primitives";
 import { getProviderDisplayName, type ResolvedTabModel } from "../models/model-config";
-import { BenchmarkResultTable } from "./BenchmarkResultTable";
+import { BenchmarkResultTable, type ModelHistoryOption } from "./BenchmarkResultTable";
 import { BenchmarkRunHeader } from "./BenchmarkRunHeader";
 import { BenchmarkScoreboard } from "./BenchmarkScoreboard";
 import { BenchmarkUnavailableState } from "./BenchmarkUnavailableState";
@@ -39,6 +39,8 @@ export function BenchmarkSection({
   verifierStatus,
   runBlocker,
   selectedModels,
+  persistedOperationModelIds,
+  onChangeOperationModelIds,
   modelAvailabilityById,
   checkingModelAvailability,
   providers,
@@ -74,6 +76,8 @@ export function BenchmarkSection({
   verifierStatus: BenchPackVerifierStatus | null;
   runBlocker: BenchPackRunBlocker | null;
   selectedModels: ResolvedTabModel[];
+  persistedOperationModelIds?: string[];
+  onChangeOperationModelIds: (modelIds: string[]) => void;
   modelAvailabilityById: Record<string, ModelAvailability>;
   checkingModelAvailability: Record<string, true>;
   providers: Record<string, BenchLocalProviderConfig>;
@@ -107,7 +111,9 @@ export function BenchmarkSection({
   const [runModeOpen, setRunModeOpen] = useState(false);
   const [runsPerTestOpen, setRunsPerTestOpen] = useState(false);
   const [shareCardData, setShareCardData] = useState<ResultShareCardData | null>(null);
-  const [operationModelIdsByTab, setOperationModelIdsByTab] = useState<Record<string, string[]>>({});
+  const [historySummariesByRunId, setHistorySummariesByRunId] = useState<Record<string, BenchPackRunSummary>>({});
+  const [modelHistoryRunIdsByTab, setModelHistoryRunIdsByTab] = useState<Record<string, Record<string, string>>>({});
+  const [loadingModelHistories, setLoadingModelHistories] = useState(false);
   const runModeRef = useRef<HTMLDivElement | null>(null);
   const runsPerTestRef = useRef<HTMLDivElement | null>(null);
   const tableScrollViewportRef = useRef<HTMLDivElement | null>(null);
@@ -123,9 +129,43 @@ export function BenchmarkSection({
   });
   const scenarios = inspection.scenarios ?? [];
   const availableModelIds = useMemo(() => selectedModels.map((model) => model.id), [selectedModels]);
-  const operationModelIds = operationModelIdsByTab[tabId] ?? availableModelIds;
+  const operationModelIds = persistedOperationModelIds ?? availableModelIds;
   const operationModelIdSet = useMemo(() => new Set(operationModelIds), [operationModelIds]);
   const operationModelCount = selectedModels.filter((model) => operationModelIdSet.has(model.id)).length;
+  const selectedHistoryRunIds = modelHistoryRunIdsByTab[tabId] ?? {};
+  const modelHistoryOptionsById = useMemo(() => {
+    const next: Record<string, ModelHistoryOption[]> = {};
+    for (const model of selectedModels) {
+      next[model.id] = Object.values(historySummariesByRunId)
+        .filter((summary) => Boolean(summary.resultsByModel[model.id]))
+        .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+        .map((summary) => ({ runId: summary.runId, startedAt: summary.startedAt, completedAt: summary.completedAt }));
+    }
+    return next;
+  }, [historySummariesByRunId, selectedModels]);
+  const displayRunSummary = useMemo(() => {
+    const sourceSummaries = selectedModels
+      .map((model) => historySummariesByRunId[selectedHistoryRunIds[model.id]])
+      .filter((summary): summary is BenchPackRunSummary => Boolean(summary));
+    const base = runSummary ?? sourceSummaries[0] ?? null;
+    if (!base) return null;
+
+    // 显示摘要按模型组合，允许同一张对比表同时使用不同运行批次的结果。
+    const resultsByModel = Object.fromEntries(
+      selectedModels.map((model) => {
+        const source = historySummariesByRunId[selectedHistoryRunIds[model.id]] ?? runSummary;
+        return [model.id, source?.resultsByModel[model.id] ?? []];
+      })
+    );
+    const scores = Object.fromEntries(
+      selectedModels.flatMap((model) => {
+        const source = historySummariesByRunId[selectedHistoryRunIds[model.id]] ?? runSummary;
+        const score = source?.scores[model.id];
+        return score ? [[model.id, score]] : [];
+      })
+    );
+    return { ...base, modelCount: selectedModels.length, resultsByModel, scores };
+  }, [historySummariesByRunId, runSummary, selectedHistoryRunIds, selectedModels]);
   const currentScenario = scenarios.find((scenario) => scenario.id === focusedScenarioId) ?? scenarios[0] ?? null;
   const highlightedScenarioId = supportsLiveScenarioColumnFocus(executionMode)
     ? currentScenario?.id ?? null
@@ -174,16 +214,16 @@ export function BenchmarkSection({
       : 0;
   const completedResultCells = selectedModels.flatMap((model) =>
     scenarios.flatMap((scenario) => {
-      const result = runSummary?.resultsByModel[model.id]?.find((candidate) => candidate.scenarioId === scenario.id);
-      return result ? [{ modelId: model.id, scenarioId: scenario.id, result }] : [];
+      const result = displayRunSummary?.resultsByModel[model.id]?.find((candidate) => candidate.scenarioId === scenario.id);
+      return result ? [{ modelId: model.id, scenarioId: scenario.id, runId: selectedHistoryRunIds[model.id], result }] : [];
     })
   );
   const providerErrorRetryCells = completedResultCells
     .filter(({ result }) => isProviderErrorResult(result))
-    .map(({ modelId, scenarioId }) => ({ modelId, scenarioId }));
+    .map(({ modelId, scenarioId, runId }) => ({ modelId, scenarioId, runId }));
   const failedRetryCells = completedResultCells
     .filter(({ result }) => result.status === "fail" && !isProviderErrorResult(result))
-    .map(({ modelId, scenarioId }) => ({ modelId, scenarioId }));
+    .map(({ modelId, scenarioId, runId }) => ({ modelId, scenarioId, runId }));
   const canRetryResultCells =
     Boolean(runSummary?.runId) && !isReplayMode && !hasLiveActivity && !isStopping && inspection.status === "ready";
   const checkingAvailability = selectedModels.some((model) => Boolean(checkingModelAvailability[model.id]));
@@ -192,18 +232,63 @@ export function BenchmarkSection({
   const runStateLabel = hasLiveActivity ? "Live" : runSummary && !runSummaryComplete ? "Incomplete" : runSummary ? "Done" : "Idle";
 
   useEffect(() => {
-    // 保留用户在当前 Tab 的操作选择；新增模型默认加入本次操作，移除模型同步清理。
-    setOperationModelIdsByTab((current) => {
-      const existing = current[tabId];
-      if (!existing) return { ...current, [tabId]: availableModelIds };
-      const next = availableModelIds.filter((modelId) => existing.includes(modelId));
-      const added = availableModelIds.filter((modelId) => !existing.includes(modelId));
-      const normalized = [...next, ...added];
-      return normalized.length === existing.length && normalized.every((id, index) => id === existing[index])
-        ? current
-        : { ...current, [tabId]: normalized };
+    let cancelled = false;
+    const loadModelHistories = async () => {
+      setLoadingModelHistories(true);
+      try {
+        const summaries = await Promise.all(
+          historyEntries.map((entry) =>
+            window.benchlocal.benchPacks.loadHistory({ benchPackId: inspection.id, runId: entry.runId })
+          )
+        );
+        if (cancelled) return;
+        setHistorySummariesByRunId(Object.fromEntries(summaries.map((summary) => [summary.runId, summary])));
+        setModelHistoryRunIdsByTab((current) => {
+          const existing = current[tabId] ?? {};
+          const next = { ...existing };
+          for (const model of selectedModels) {
+            const selectedStillExists = summaries.some(
+              (summary) => summary.runId === next[model.id] && Boolean(summary.resultsByModel[model.id])
+            );
+            if (selectedStillExists) continue;
+            const latest = summaries
+              .filter((summary) => Boolean(summary.resultsByModel[model.id]))
+              .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
+            if (latest) next[model.id] = latest.runId;
+            else delete next[model.id];
+          }
+          return { ...current, [tabId]: next };
+        });
+      } catch {
+        // 历史列表可能在删除或清理时变化，下一次列表刷新会重新建立模型索引。
+      } finally {
+        if (!cancelled) setLoadingModelHistories(false);
+      }
+    };
+    void loadModelHistories();
+    return () => {
+      cancelled = true;
+    };
+  }, [historyEntries, inspection.id, selectedModels, tabId]);
+
+  useEffect(() => {
+    if (!runSummary) return;
+    setHistorySummariesByRunId((current) => ({ ...current, [runSummary.runId]: runSummary }));
+    setModelHistoryRunIdsByTab((current) => {
+      const next = { ...(current[tabId] ?? {}) };
+      for (const modelId of Object.keys(runSummary.resultsByModel)) next[modelId] = runSummary.runId;
+      return { ...current, [tabId]: next };
     });
-  }, [tabId, availableModelIds]);
+  }, [runSummary, tabId]);
+
+  useEffect(() => {
+    // 将操作勾选持久化到 Tab，并自动清理已移除模型、补入新模型。
+    const existing = persistedOperationModelIds;
+    const normalized = existing ? existing.filter((modelId) => availableModelIds.includes(modelId)) : availableModelIds;
+    if (!existing || normalized.length !== existing.length || normalized.some((id, index) => id !== existing[index])) {
+      onChangeOperationModelIds(normalized);
+    }
+  }, [availableModelIds, persistedOperationModelIds, onChangeOperationModelIds]);
 
   useEffect(() => {
     if (!runModeOpen && !runsPerTestOpen) {
@@ -376,12 +461,19 @@ export function BenchmarkSection({
             scenarios={scenarios}
             selectedModels={selectedModels}
             operationModelIds={operationModelIds}
-            onChangeOperationModelIds={(modelIds) =>
-              setOperationModelIdsByTab((current) => ({ ...current, [tabId]: modelIds }))
-            }
+            onChangeOperationModelIds={onChangeOperationModelIds}
             modelAvailabilityById={modelAvailabilityById}
             checkingModelAvailability={checkingModelAvailability}
-            runSummary={runSummary}
+            runSummary={displayRunSummary}
+            modelHistoryOptionsById={modelHistoryOptionsById}
+            loadingModelHistories={loadingModelHistories}
+            selectedHistoryRunIds={selectedHistoryRunIds}
+            onSelectModelHistory={(modelId, runId) =>
+              setModelHistoryRunIdsByTab((current) => ({
+                ...current,
+                [tabId]: { ...(current[tabId] ?? {}), [modelId]: runId }
+              }))
+            }
             liveRun={liveRun}
             isReplayMode={isReplayMode}
             isViewingHistory={isViewingHistory}
@@ -407,9 +499,9 @@ export function BenchmarkSection({
             onRetryCells={onRetryCells}
             onOpenDetail={onOpenDetail}
           />
-          {runSummary && !hasLiveActivity && (!isReplayMode || hasCompletedReplay) ? (
+          {displayRunSummary && !hasLiveActivity && (!isReplayMode || hasCompletedReplay) ? (
             <BenchmarkScoreboard
-              runSummary={runSummary}
+              runSummary={displayRunSummary}
               selectedModels={selectedModels}
               providers={providers}
               executionMode={executionMode}
