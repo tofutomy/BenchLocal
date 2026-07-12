@@ -81,8 +81,10 @@ Each Bench Pack owns its benchmark behavior:
   shared protocol, config, workspace, and theme types
 - `packages/benchlocal-sdk`
   authoring helpers for Bench Pack repos
+- `packages/benchlocal-web-sdk`
+  public browser bridge SDK for interactive Web Bench Packs
 - `packages/benchpack-host`
-  host-side install, inspection, verifier, and run orchestration logic
+  private host-side install, inspection, verifier, and run orchestration logic
 - `themes/`
   built-in desktop themes
 - `scripts/`
@@ -91,6 +93,8 @@ Each Bench Pack owns its benchmark behavior:
   packaging and release docs
 
 ## Developer references
+
+The supported npm entrypoints are `@benchlocal/core`, `@benchlocal/sdk`, and `@benchlocal/web-sdk`. Import from package roots; workspace source and build-output deep paths are internal.
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
 - [BENCH_PACK_AUTHORING.md](./BENCH_PACK_AUTHORING.md)

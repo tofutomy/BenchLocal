@@ -27,6 +27,8 @@ The public entrypoint exports:
 - `theme`
 - `workspaces`
 
+Only imports from `@benchlocal/core` are supported. Deep imports from `src/`, `dist/`, or individual implementation modules are not stable API. Persisted-document migration helpers are intentionally internal; callers should use the public load and save functions.
+
 ## Intended users
 
 - BenchLocal app and host code

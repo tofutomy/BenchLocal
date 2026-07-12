@@ -54,6 +54,8 @@ packages/
     shared protocol, config, workspaces, themes
   benchlocal-sdk/
     authoring helpers for Bench Packs
+  benchlocal-web-sdk/
+    browser bridge SDK for interactive Web Bench Packs
   benchpack-host/
     install, inspection, verifier, and run orchestration
 themes/
@@ -156,14 +158,23 @@ Use `state.json` for workspace and tab state:
 
 ## Public package boundaries
 
-BenchLocal publishes two public npm packages:
+BenchLocal publishes three public npm packages with stable root entrypoints:
 
 - `@benchlocal/core`
 - `@benchlocal/sdk`
+- `@benchlocal/web-sdk`
 
-Bench Pack authors depend on those packages.
+Their supported surfaces are:
 
-The Electron app and host orchestration remain part of the BenchLocal desktop app repo.
+- `@benchlocal/core`: persisted document types, runtime and Agent protocols, and theme contracts
+- `@benchlocal/sdk`: Node-side Bench Pack authoring helpers and the core types needed by pack runtimes
+- `@benchlocal/web-sdk`: browser bridge client and types for interactive Web Bench Packs
+
+Consumers must import from a package root. Package `src/`, `dist/`, and other deep paths are implementation details and are not stable API.
+
+`@benchlocal/benchpack-host` and the Electron `app` are private implementation workspaces. The app may resolve workspace packages directly to source through development aliases. Published consumers instead resolve each package's `exports` to compiled `dist` files, so package builds and public type-contract checks remain required before publishing.
+
+The three public packages currently use the same ecosystem release version. The Web SDK's bridge version is a separate compatibility boundary and changes only when the browser-host message protocol changes.
 
 ## Product assumptions
 

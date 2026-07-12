@@ -109,6 +109,8 @@ Bench Packs should depend on the published public packages:
 
 Use the current published version in real packs. The version above is an example, not a promise that it will stay current.
 
+Interactive Web Bench Packs use `@benchlocal/web-sdk` instead of the Node-side authoring SDK. All three public packages expose their supported API from the package root; do not import from package `src/` or `dist/` paths. `@benchlocal/benchpack-host` is a private desktop implementation package and is not a Bench Pack dependency.
+
 ## `benchlocal/index.ts`
 
 `benchlocal/index.ts` should stay thin.

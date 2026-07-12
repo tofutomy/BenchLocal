@@ -14,6 +14,8 @@ npm install @benchlocal/web-sdk
 
 `@benchlocal/web-sdk` is MIT licensed.
 
+This is a public stable package alongside `@benchlocal/core` and `@benchlocal/sdk`. Import only from the `@benchlocal/web-sdk` package root; `src/` and `dist/` deep imports are implementation details.
+
 ## What This SDK Does
 
 Interactive Web Bench Packs run in a browser surface inside the BenchLocal desktop app. The web page owns the visual benchmark experience. BenchLocal owns local state and sensitive execution:

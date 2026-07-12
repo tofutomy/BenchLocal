@@ -82,6 +82,8 @@ When a pack uses a Docker verifier, the returned inference endpoint may also inc
 
 `@benchlocal/sdk` also re-exports the main public types from `@benchlocal/core`.
 
+Only the `@benchlocal/sdk` package root is a supported entrypoint. Its source and build-output paths are implementation details. Use `@benchlocal/web-sdk` for browser-hosted interactive Bench Packs.
+
 ## Authoring model
 
 - keep canonical Bench Pack metadata in `benchlocal.pack.json`
