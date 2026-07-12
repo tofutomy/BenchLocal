@@ -618,7 +618,32 @@
 
 .model-cell {
   display: flex;
+  align-items: center;
+  gap: 10px;
   justify-content: flex-start;
+}
+
+.model-operation-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.model-operation-checkbox,
+.model-operation-heading input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.model-operation-checkbox:disabled,
+.model-operation-heading input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .model-badge-wrap {

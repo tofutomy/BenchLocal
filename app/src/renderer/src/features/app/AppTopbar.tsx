@@ -3,6 +3,7 @@ import { ArrowUp, ChevronDown, Cog, Palette, Sidebar } from "lucide-react";
 import type { BenchLocalThemeDescriptor, BenchPackInspection } from "@core";
 import { BenchPackPickerTrigger } from "../benchpacks/BenchPackPicker";
 import { resolveThemeLabel } from "../../shared/theme-format";
+import { useI18n } from "../../shared/i18n";
 
 export function AppTopbar({
   isMacPlatform,
@@ -55,6 +56,8 @@ export function AppTopbar({
   onToggleThemeMenu: () => void;
   onSelectTheme: (themeId: string) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <header className={`topbar${isMacPlatform ? "" : " topbar-nonmac"}`}>
       <div className="topbar-leading">
@@ -62,8 +65,8 @@ export function AppTopbar({
           type="button"
           onClick={onToggleSidebar}
           className="toolbar-icon-button"
-          aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-          title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          aria-label={sidebarOpen ? t("topbar.hideSidebar") : t("topbar.showSidebar")}
+          title={sidebarOpen ? t("topbar.hideSidebar") : t("topbar.showSidebar")}
         >
           <Sidebar size={16} />
         </button>
@@ -96,10 +99,10 @@ export function AppTopbar({
               onClick={onOpenSettings}
               className="ghost-button"
               aria-label="Open settings"
-              title="Settings"
+              title={t("topbar.settings")}
             >
               <Cog size={16} />
-              Settings
+              {t("topbar.settings")}
             </button>
             {appUpdateDownloaded ? (
               <button
@@ -107,10 +110,10 @@ export function AppTopbar({
                 onClick={onInstallDownloadedUpdate}
                 className="button-warn header-update-button"
                 aria-label="Restart BenchLocal to install update"
-                title={downloadedUpdateVersion ? `Install BenchLocal ${downloadedUpdateVersion}` : "Install BenchLocal update"}
+                title={downloadedUpdateVersion ? `Install BenchLocal ${downloadedUpdateVersion}` : t("topbar.installUpdate")}
               >
                 <ArrowUp size={16} />
-                Restart to Update
+                {t("topbar.restartToUpdate")}
               </button>
             ) : null}
           </div>
@@ -125,7 +128,7 @@ export function AppTopbar({
                 aria-expanded={themeMenuOpen}
               >
                 <Palette size={15} />
-                <span className="settings-theme-button-label">Theme: {currentThemeLabel}</span>
+                <span className="settings-theme-button-label">{t("topbar.themeLabel")} {currentThemeLabel}</span>
                 <ChevronDown size={14} />
               </button>
               {themeMenuOpen ? (

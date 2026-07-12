@@ -57,6 +57,7 @@ official_url = "https://raw.githubusercontent.com/stevibe/benchlocal-registry/ma
 
 [ui]
 theme = "system"
+locale = "en"
 
 [agent]
 enabled = false
@@ -236,6 +237,7 @@ Current UI settings are intentionally small:
 ```toml
 [ui]
 theme = "system"
+locale = "en"
 ```
 
 Supported built-in values:

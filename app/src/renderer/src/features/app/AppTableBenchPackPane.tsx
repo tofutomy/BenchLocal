@@ -96,7 +96,7 @@ export function AppTableBenchPackPane({
   resetTabRunState: (tab: BenchLocalWorkspaceTab) => void;
   replayTabRun: (tab: BenchLocalWorkspaceTab, runSummary: BenchPackRunSummary) => Promise<void>;
   resumeTabRun: (tab: BenchLocalWorkspaceTab, runSummary: BenchPackRunSummary) => Promise<void>;
-  runTab: (tab: BenchLocalWorkspaceTab) => Promise<void>;
+  runTab: (tab: BenchLocalWorkspaceTab, operationModelIds?: string[]) => Promise<void>;
   stopTabRun: (tabId: string) => Promise<void>;
   retryScenarioCells: (
     tab: BenchLocalWorkspaceTab,
@@ -224,13 +224,13 @@ export function AppTableBenchPackPane({
         onRefreshModelAvailability={() => void refreshModelAvailability(activeDisplayModels)}
         onClearHistory={() => clearLoadedHistoryRun(activeTab.id)}
         onStartOver={() => resetTabRunState(activeTab)}
-        onRun={() =>
+        onRun={(operationModelIds) =>
           void (
             activeLoadedHistory?.mode === "replay" && activeRunSummary
               ? replayTabRun(activeTab, activeRunSummary)
               : activeRunSummary && !isRunSummaryComplete(activeRunSummary)
               ? resumeTabRun(activeTab, activeRunSummary)
-              : runTab(activeTab)
+              : runTab(activeTab, operationModelIds)
           )
         }
         onStop={() => void stopTabRun(activeTab.id)}

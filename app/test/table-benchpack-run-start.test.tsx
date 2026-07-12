@@ -25,7 +25,7 @@ function installDesktopApi(api: unknown) {
 }
 
 describe("table Bench Pack run start", () => {
-  it("passes the selected model and tab execution options to the desktop runner", async () => {
+  it("passes only the operation-selected models and tab execution options to the desktop runner", async () => {
     const run = vi.fn().mockResolvedValue({
       runId: "run-1",
       benchPackId: "pack-1",
@@ -40,13 +40,16 @@ describe("table Bench Pack run start", () => {
     installDesktopApi({ benchPacks: { run } });
 
     const draft = {
-      models: [{ id: "model-1", provider: "provider-1", model: "remote-model", label: "Model One", group: "default", enabled: true }],
+      models: [
+        { id: "model-1", provider: "provider-1", model: "remote-model-1", label: "Model One", group: "default", enabled: true },
+        { id: "model-2", provider: "provider-1", model: "remote-model-2", label: "Model Two", group: "default", enabled: true }
+      ],
       benchpacks: {}
     } as unknown as BenchLocalConfig;
     const tab = {
       id: "table-1",
       benchPackId: "pack-1",
-      modelSelections: [{ modelId: "model-1" }],
+      modelSelections: [{ modelId: "model-1" }, { modelId: "model-2" }],
       executionMode: "parallel_by_test_case",
       runsPerTest: 3,
       samplingOverrides: { temperature: 0.2 }
@@ -102,13 +105,13 @@ describe("table Bench Pack run start", () => {
     });
 
     await act(async () => {
-      await result.current.actions.runTab(tab);
+      await result.current.actions.runTab(tab, ["model-2"]);
     });
 
     expect(run).toHaveBeenCalledWith({
       tabId: "table-1",
       benchPackId: "pack-1",
-      modelIds: ["model-1"],
+      modelIds: ["model-2"],
       executionMode: "parallel_by_test_case",
       runsPerTest: 3,
       generation: { temperature: 0.2 }

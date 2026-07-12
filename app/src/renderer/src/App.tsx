@@ -20,6 +20,7 @@ import { useAppDesktopEffects } from "./features/app/useAppDesktopEffects";
 import { useTabStripLayout } from "./features/app/useTabStripLayout";
 import { useWebBenchPackRunActions } from "./features/app/useWebBenchPackRunActions";
 import { useTableBenchPackRunActions } from "./features/app/useTableBenchPackRunActions";
+import { I18nProvider, type SupportedLocale } from "./shared/i18n";
 import {
   type ActiveRunEntry,
   type BenchPackMutationState,
@@ -112,7 +113,7 @@ export function App() {
     return window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY) !== "false";
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("providers");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [aboutDialogOpen, setAboutDialogOpen] = useState(false);
   const [appMetadata, setAppMetadata] = useState<BenchLocalAppMetadata | null>(null);
   const [agentAccessState, setAgentAccessState] = useState<BenchLocalAgentAccessState | null>(null);
@@ -582,6 +583,39 @@ export function App() {
     }
   };
 
+  // 语言切换：更新 draft 并立即持久化（参照 saveThemeSelection 模式）
+  const currentLocale = draft?.ui.locale ?? "en";
+  const setLocale = (locale: SupportedLocale) => {
+    if (!draft) {
+      return;
+    }
+    void saveLocaleSelection(locale);
+  };
+
+  const saveLocaleSelection = async (locale: string) => {
+    if (!draft) {
+      return;
+    }
+    const previousDraft = cloneConfig(draft);
+    const previousLoadConfig = loadState ? cloneConfig(loadState.config) : null;
+    const nextConfig = previousLoadConfig ? cloneConfig(previousLoadConfig) : cloneConfig(draft);
+    nextConfig.ui.locale = locale;
+    setDraft(nextConfig);
+    const saved = await persistConfig(nextConfig, {
+      preserveFilesystemDraft: true,
+      previousDraft,
+      previousLoadConfig
+    });
+    if (!saved) {
+      setDraft(previousDraft);
+    }
+  };
+
+  // 同步 <html lang> 属性
+  useEffect(() => {
+    document.documentElement.lang = currentLocale === "zh" ? "zh-CN" : "en";
+  }, [currentLocale]);
+
   const { saveVerifierConfig, cancelSettingsVerifierStart } = useVerifierConfigActions({
     draft,
     loadState,
@@ -810,7 +844,8 @@ export function App() {
   };
 
   return (
-    <div>
+    <I18nProvider locale={currentLocale} setLocale={setLocale}>
+      <div>
       <main className="page-shell">
         <section className="desktop-shell">
           <AppTopbar
@@ -889,6 +924,7 @@ export function App() {
               regenerateAgentToken={regenerateAgentToken}
               updateDraft={updateDraft}
               saveVerifierConfig={saveVerifierConfig}
+              onLocaleChange={saveLocaleSelection}
             />
           ) : (
             <AppWorkspaceShell
@@ -1182,5 +1218,6 @@ export function App() {
         }}
       />
     </div>
+    </I18nProvider>
   );
 }

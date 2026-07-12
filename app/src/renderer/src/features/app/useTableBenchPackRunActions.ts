@@ -92,7 +92,7 @@ export function useTableBenchPackRunActions({
   setLiveScenarioFocus,
   setLoadedHistoryRuns
 }: UseTableBenchPackRunActionsOptions) {
-  const runTab = async (tab: BenchLocalWorkspaceTab) => {
+  const runTab = async (tab: BenchLocalWorkspaceTab, operationModelIds?: string[]) => {
     setError(null);
     setAppNotice(null);
 
@@ -102,7 +102,12 @@ export function useTableBenchPackRunActions({
     }
 
     const benchPackId = tab.benchPackId;
-    const selectedModels = resolveTabModels(tab, draft.models);
+    // Tab 中的模型表示长期对比集合；本次操作模型只决定这一次实际执行谁。
+    const comparisonModels = resolveTabModels(tab, draft.models);
+    const operationModelIdSet = operationModelIds ? new Set(operationModelIds) : null;
+    const selectedModels = operationModelIdSet
+      ? comparisonModels.filter((model) => operationModelIdSet.has(model.id))
+      : comparisonModels;
     const inspection = benchPackInspections.find((candidate) => candidate.id === benchPackId);
 
     if (inspection?.manifest) {

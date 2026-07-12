@@ -59,6 +59,8 @@ export function BenchmarkResultTable({
   benchPackId,
   scenarios,
   selectedModels,
+  operationModelIds,
+  onChangeOperationModelIds,
   modelAvailabilityById,
   checkingModelAvailability,
   runSummary,
@@ -91,6 +93,8 @@ export function BenchmarkResultTable({
   benchPackId: string;
   scenarios: ScenarioMeta[];
   selectedModels: ResultTableModel[];
+  operationModelIds: string[];
+  onChangeOperationModelIds: (modelIds: string[]) => void;
   modelAvailabilityById: Record<string, ModelAvailability>;
   checkingModelAvailability: Record<string, true>;
   runSummary: BenchPackRunSummary | null;
@@ -119,6 +123,16 @@ export function BenchmarkResultTable({
   onRetryCells: (cells: RetryScenarioCell[], label: string) => void;
   onOpenDetail: (detail: DetailModalState) => void;
 }) {
+  const operationModelIdSet = new Set(operationModelIds);
+  const allOperationModelsSelected = selectedModels.length > 0 && selectedModels.every((model) => operationModelIdSet.has(model.id));
+
+  const toggleOperationModel = (modelId: string, selected: boolean) => {
+    const next = new Set(operationModelIds);
+    if (selected) next.add(modelId);
+    else next.delete(modelId);
+    onChangeOperationModelIds(selectedModels.map((model) => model.id).filter((id) => next.has(id)));
+  };
+
   function renderResultCell(modelId: string, scenarioId: string) {
     const liveResult = liveRun?.resultsByModel[modelId]?.find((candidate) => candidate.scenarioId === scenarioId);
     const persistedResult = isReplayMode
@@ -203,7 +217,18 @@ export function BenchmarkResultTable({
               <thead>
                 <tr>
                   <th className={`scenario-row-label${stickyColumnShadow ? " has-scroll-shadow" : ""}`}>
-                    <span>Model</span>
+                    <label className="model-operation-heading">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all comparison models for this operation"
+                        checked={allOperationModelsSelected}
+                        disabled={hasLiveActivity}
+                        onChange={(event) =>
+                          onChangeOperationModelIds(event.target.checked ? selectedModels.map((model) => model.id) : [])
+                        }
+                      />
+                      <span>Model</span>
+                    </label>
                   </th>
                   {scenarios.map((scenario) => (
                     <th
@@ -232,6 +257,14 @@ export function BenchmarkResultTable({
                     <tr key={model.id}>
                       <td className={`scenario-row-label${stickyColumnShadow ? " has-scroll-shadow" : ""}`}>
                         <div className="model-cell">
+                          <input
+                            type="checkbox"
+                            className="model-operation-checkbox"
+                            aria-label={`Select ${model.displayLabel} for this operation`}
+                            checked={operationModelIdSet.has(model.id)}
+                            disabled={hasLiveActivity}
+                            onChange={(event) => toggleOperationModel(model.id, event.target.checked)}
+                          />
                           {isViewingHistory ? (
                             <div className="model-badge-wrap">
                               <span

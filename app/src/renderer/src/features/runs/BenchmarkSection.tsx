@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   BenchLocalExecutionMode,
   BenchLocalProviderConfig,
@@ -99,7 +99,7 @@ export function BenchmarkSection({
   onRefreshModelAvailability: () => void;
   onClearHistory: () => void;
   onStartOver: () => void;
-  onRun: () => void;
+  onRun: (modelIds: string[]) => void;
   onStop: () => void;
   onRetryCells: (cells: RetryScenarioCell[], label: string) => void;
   onOpenDetail: (detail: DetailModalState) => void;
@@ -107,6 +107,7 @@ export function BenchmarkSection({
   const [runModeOpen, setRunModeOpen] = useState(false);
   const [runsPerTestOpen, setRunsPerTestOpen] = useState(false);
   const [shareCardData, setShareCardData] = useState<ResultShareCardData | null>(null);
+  const [operationModelIdsByTab, setOperationModelIdsByTab] = useState<Record<string, string[]>>({});
   const runModeRef = useRef<HTMLDivElement | null>(null);
   const runsPerTestRef = useRef<HTMLDivElement | null>(null);
   const tableScrollViewportRef = useRef<HTMLDivElement | null>(null);
@@ -121,6 +122,10 @@ export function BenchmarkSection({
     scrollLeft: 0
   });
   const scenarios = inspection.scenarios ?? [];
+  const availableModelIds = useMemo(() => selectedModels.map((model) => model.id), [selectedModels]);
+  const operationModelIds = operationModelIdsByTab[tabId] ?? availableModelIds;
+  const operationModelIdSet = useMemo(() => new Set(operationModelIds), [operationModelIds]);
+  const operationModelCount = selectedModels.filter((model) => operationModelIdSet.has(model.id)).length;
   const currentScenario = scenarios.find((scenario) => scenario.id === focusedScenarioId) ?? scenarios[0] ?? null;
   const highlightedScenarioId = supportsLiveScenarioColumnFocus(executionMode)
     ? currentScenario?.id ?? null
@@ -141,14 +146,20 @@ export function BenchmarkSection({
     EXECUTION_MODE_OPTIONS.find((option) => option.value === executionMode)?.label ?? "Run Mode";
   const currentRunsPerTest = normalizeRunsPerTest(runsPerTest);
   const canReplayRun = isReplayMode && Boolean(runSummary) && isRunSummaryComplete(runSummary);
-  const runButtonLabel = isRunning ? "Stop" : canReplayRun ? "Replay" : isResumableRun ? "Resume Test" : "Run";
+  const runButtonLabel = isRunning
+    ? "Stop"
+    : canReplayRun
+      ? "Replay"
+      : isResumableRun
+        ? "Resume Test"
+        : `Run Selected (${operationModelCount})`;
   const hasLiveActivity = isRunning || hasRetryActivity;
   const hasCompletedReplay =
     isReplayMode &&
     !hasLiveActivity &&
     replayTotalCellCount > 0 &&
     replayRevealedCellCount >= replayTotalCellCount;
-  const canStartFreshRun = inspection.status === "ready" && selectedModels.length > 0;
+  const canStartFreshRun = inspection.status === "ready" && operationModelCount > 0;
   const canResumeRun = Boolean(runSummary) && isResumableRun;
   const isRunButtonDisabled = isRunning
     ? false
@@ -179,6 +190,20 @@ export function BenchmarkSection({
   const runSummaryComplete = isRunSummaryComplete(runSummary);
   const runStateClass = isRunning ? "status-live" : runSummary ? runSummaryComplete ? "status-done" : "status-preview" : "status-idle";
   const runStateLabel = hasLiveActivity ? "Live" : runSummary && !runSummaryComplete ? "Incomplete" : runSummary ? "Done" : "Idle";
+
+  useEffect(() => {
+    // 保留用户在当前 Tab 的操作选择；新增模型默认加入本次操作，移除模型同步清理。
+    setOperationModelIdsByTab((current) => {
+      const existing = current[tabId];
+      if (!existing) return { ...current, [tabId]: availableModelIds };
+      const next = availableModelIds.filter((modelId) => existing.includes(modelId));
+      const added = availableModelIds.filter((modelId) => !existing.includes(modelId));
+      const normalized = [...next, ...added];
+      return normalized.length === existing.length && normalized.every((id, index) => id === existing[index])
+        ? current
+        : { ...current, [tabId]: normalized };
+    });
+  }, [tabId, availableModelIds]);
 
   useEffect(() => {
     if (!runModeOpen && !runsPerTestOpen) {
@@ -292,6 +317,7 @@ export function BenchmarkSection({
       <BenchmarkRunHeader
         inspection={inspection}
         selectedModelCount={selectedModels.length}
+        operationModelCount={operationModelCount}
         historyEntryCount={historyEntries.length}
         loadedHistory={loadedHistory}
         runBlocker={runBlocker}
@@ -306,7 +332,7 @@ export function BenchmarkSection({
         onOpenHistory={onOpenHistory}
         onClearHistory={onClearHistory}
         onStartOver={onStartOver}
-        onRun={onRun}
+        onRun={() => onRun(operationModelIds)}
         onStop={onStop}
         onOpenVerification={onOpenVerification}
         onRefreshVerification={onRefreshVerification}
@@ -349,6 +375,10 @@ export function BenchmarkSection({
             benchPackId={inspection.id}
             scenarios={scenarios}
             selectedModels={selectedModels}
+            operationModelIds={operationModelIds}
+            onChangeOperationModelIds={(modelIds) =>
+              setOperationModelIdsByTab((current) => ({ ...current, [tabId]: modelIds }))
+            }
             modelAvailabilityById={modelAvailabilityById}
             checkingModelAvailability={checkingModelAvailability}
             runSummary={runSummary}
@@ -363,8 +393,8 @@ export function BenchmarkSection({
             hasLiveActivity={hasLiveActivity}
             checkingAvailability={checkingAvailability}
             canRetryResultCells={canRetryResultCells}
-            providerErrorRetryCells={providerErrorRetryCells}
-            failedRetryCells={failedRetryCells}
+            providerErrorRetryCells={providerErrorRetryCells.filter((cell) => operationModelIdSet.has(cell.modelId))}
+            failedRetryCells={failedRetryCells.filter((cell) => operationModelIdSet.has(cell.modelId))}
             tableScrollViewportRef={tableScrollViewportRef}
             tableScrollbarTrackRef={tableScrollbarTrackRef}
             tableScrollbarDragRef={tableScrollbarDragRef}

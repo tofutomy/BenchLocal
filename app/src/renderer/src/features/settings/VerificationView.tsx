@@ -3,6 +3,7 @@ import type { BenchLocalConfig, BenchLocalVerifierConfig } from "@core";
 import type { BenchPackVerifierStatus } from "@/shared/desktop-api";
 import { formatVerifierRuntimeStatus } from "../runs/verifier-status";
 import { InlineSelectField, Panel, SettingsTableShell } from "../../shared/components/settings-primitives";
+import { useI18n } from "../../shared/i18n";
 
 function verifierModeLabel(mode: BenchLocalVerifierConfig["mode"]): string {
   switch (mode) {
@@ -45,6 +46,7 @@ export function VerificationView({
   onStop: (benchPackId: string) => Promise<void>;
   onDeleteImage: (benchPackId: string, benchPackName: string, verifierId: string) => void;
 }) {
+  const { t } = useI18n();
   const verificationEntries = Object.entries(draft.benchpacks).filter(([benchPackId]) => {
     const status = statuses[benchPackId];
     return Boolean(status && status.verifiers.length > 0);
@@ -69,8 +71,8 @@ export function VerificationView({
 
   return (
     <Panel
-      title="Verification Runtimes"
-      subtitle="BenchLocal manages required verifier runtimes automatically through Local Docker."
+      title={t("settings.verification.title")}
+      subtitle={t("settings.verification.subtitle")}
       tone="orange"
       icon={<Wrench size={16} />}
     >
@@ -78,19 +80,19 @@ export function VerificationView({
         <table className="settings-list-table">
           <thead>
             <tr>
-              <th>Bench Pack</th>
-              <th>Mode</th>
-              <th>Status</th>
-              <th>Endpoint</th>
-              <th>Auto Start</th>
-              <th>Actions</th>
+              <th>{t("settings.verification.col.benchPack")}</th>
+              <th>{t("settings.verification.col.mode")}</th>
+              <th>{t("settings.verification.col.status")}</th>
+              <th>{t("settings.verification.col.endpoint")}</th>
+              <th>{t("settings.verification.col.autoStart")}</th>
+              <th>{t("settings.verification.col.actions")}</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={6}>
-                  <div className="settings-row-secondary">No installed Bench Packs currently require a verifier.</div>
+                  <div className="settings-row-secondary">{t("settings.verification.noVerifiers")}</div>
                 </td>
               </tr>
             ) : (
@@ -152,7 +154,7 @@ export function VerificationView({
                       {runtime?.status === "running" ? (
                         <button type="button" onClick={() => onStop(benchPackId)} className="ghost-button ghost-button-compact">
                           <Square size={14} />
-                          Stop
+                          {t("settings.verification.stop")}
                         </button>
                       ) : (
                         <button
@@ -162,7 +164,7 @@ export function VerificationView({
                           disabled={docker?.state !== "ready"}
                         >
                           <Play size={14} />
-                          Start
+                          {t("settings.verification.start")}
                         </button>
                       )}
                       {runtime?.dockerImagePresent ? (
@@ -173,7 +175,7 @@ export function VerificationView({
                           disabled={verifier.mode !== "docker" || docker?.state !== "ready" || runtime?.status === "running"}
                         >
                           <Trash2 size={14} />
-                          Delete Image
+                          {t("settings.verification.deleteImage")}
                         </button>
                       ) : null}
                     </div>

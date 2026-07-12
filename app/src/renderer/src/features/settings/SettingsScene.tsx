@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Bot, ChevronLeft, PlugZap, Server, Wrench } from "lucide-react";
+import { Bot, ChevronLeft, Globe, PlugZap, Server, Wrench } from "lucide-react";
 import type {
   BenchLocalAgentAccess,
   BenchLocalConfig,
@@ -12,21 +12,28 @@ import type {
   BenchPackMutationProgress,
   BenchPackVerifierStatus
 } from "@/shared/desktop-api";
+import { useI18n } from "../../shared/i18n";
 import { BenchPackRegistryView } from "../benchpacks/BenchPackRegistryView";
 import { AdvancedSettingsView } from "./AdvancedSettingsView";
 import { AgentAccessView } from "./AgentAccessView";
+import { GeneralSettingsView } from "./GeneralSettingsView";
 import { ModelsView, ProvidersView } from "./ProviderModelViews";
 import { VerificationView } from "./VerificationView";
 
-export type SettingsTab = "providers" | "models" | "benchPacks" | "verification" | "agent" | "advanced";
+export type SettingsTab = "general" | "providers" | "models" | "benchPacks" | "verification" | "agent" | "advanced";
 
-const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; blurb: string; icon: ReactNode }> = [
-  { id: "providers", label: "Providers", blurb: "Provider endpoints and credentials.", icon: <Server size={16} /> },
-  { id: "models", label: "Models", blurb: "Shared model registry across Bench Packs.", icon: <Bot size={16} /> },
-  { id: "benchPacks", label: "Bench Packs", blurb: "Browse, install, update, and remove official Bench Packs.", icon: <PlugZap size={16} /> },
-  { id: "verification", label: "Verification", blurb: "Managed verifiers and dependency modes.", icon: <Wrench size={16} /> },
-  { id: "agent", label: "Agent Access", blurb: "Local API and live event stream for AI agents.", icon: <Server size={16} /> }
-];
+// tab 条目定义，在组件内通过 t() 获取翻译后的 label 和 blurb
+function useSettingsTabs(): Array<{ id: SettingsTab; label: string; blurb: string; icon: ReactNode }> {
+  const { t } = useI18n();
+  return [
+    { id: "general", label: t("settings.tab.general"), blurb: t("settings.tab.general.blurb"), icon: <Globe size={16} /> },
+    { id: "providers", label: t("settings.tab.providers"), blurb: t("settings.tab.providers.blurb"), icon: <Server size={16} /> },
+    { id: "models", label: t("settings.tab.models"), blurb: t("settings.tab.models.blurb"), icon: <Bot size={16} /> },
+    { id: "benchPacks", label: t("settings.tab.benchPacks"), blurb: t("settings.tab.benchPacks.blurb"), icon: <PlugZap size={16} /> },
+    { id: "verification", label: t("settings.tab.verification"), blurb: t("settings.tab.verification.blurb"), icon: <Wrench size={16} /> },
+    { id: "agent", label: t("settings.tab.agent"), blurb: t("settings.tab.agent.blurb"), icon: <Server size={16} /> }
+  ];
+}
 
 export function SettingsScene({
   settingsTab,
@@ -62,7 +69,8 @@ export function SettingsScene({
   onConfigureAgentAccess,
   onRegenerateAgentToken,
   updateDraft,
-  onUpdateVerifier
+  onUpdateVerifier,
+  onLocaleChange
 }: {
   settingsTab: SettingsTab;
   setSettingsTab: (tab: SettingsTab) => void;
@@ -97,28 +105,32 @@ export function SettingsScene({
   onConfigureAgentAccess: (input: { enabled: boolean; access?: BenchLocalAgentAccess; port?: number }) => void;
   onRegenerateAgentToken: () => void;
   updateDraft: (updater: (current: BenchLocalConfig) => BenchLocalConfig) => void;
+  onLocaleChange: (locale: string) => void;
   onUpdateVerifier: (
     benchPackId: string,
     verifierId: string,
     updater: (verifier: BenchLocalVerifierConfig) => BenchLocalVerifierConfig
   ) => void;
 }) {
+  const { t } = useI18n();
+  const settingsTabs = useSettingsTabs();
+
   return (
     <section className="settings-scene">
       <aside className="settings-sidebar">
         <div className="settings-sidebar-header">
           <button type="button" onClick={onBack} className="settings-back-button">
             <ChevronLeft size={16} />
-            Back to Main Scene
+            {t("settings.backToMain")}
           </button>
           <div className="settings-sidebar-title-block">
-            <p className="eyebrow">Settings</p>
-            <h2 className="settings-sidebar-title">Preferences</h2>
+            <p className="eyebrow">{t("settings.title")}</p>
+            <h2 className="settings-sidebar-title">{t("settings.preferences")}</h2>
           </div>
         </div>
 
         <div className="settings-sidebar-group">
-          {SETTINGS_TABS.map((tab) => (
+          {settingsTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -133,6 +145,13 @@ export function SettingsScene({
 
       <div className="settings-scene-content">
         <div className="settings-body settings-body-scene">
+          {settingsTab === "general" ? (
+            <GeneralSettingsView
+              draft={draft}
+              onLocaleChange={onLocaleChange}
+            />
+          ) : null}
+
           {settingsTab === "providers" ? (
             <ProvidersView
               providers={draft.providers}

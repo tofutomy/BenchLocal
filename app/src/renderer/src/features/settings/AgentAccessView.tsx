@@ -3,6 +3,7 @@ import { CircleAlert, Copy, Logs, RotateCcw, Save, Server } from "lucide-react";
 import type { BenchLocalAgentAccess } from "@core";
 import type { BenchLocalAgentAccessState } from "@/shared/desktop-api";
 import { Field, FieldToggle, Panel } from "../../shared/components/settings-primitives";
+import { useI18n } from "../../shared/i18n";
 
 export function AgentAccessView({
   state,
@@ -13,6 +14,7 @@ export function AgentAccessView({
   onConfigure: (input: { enabled: boolean; access?: BenchLocalAgentAccess; port?: number }) => void;
   onRegenerateToken: () => void;
 }) {
+  const { t } = useI18n();
   const [enabledDraft, setEnabledDraft] = useState(state?.enabled ?? false);
   const [accessDraft, setAccessDraft] = useState<BenchLocalAgentAccess>(state?.access ?? "localhost");
   const [portDraft, setPortDraft] = useState(state?.configuredPort ? String(state.configuredPort) : "");
@@ -68,53 +70,53 @@ export function AgentAccessView({
 
   return (
     <section className="advanced-grid">
-      <Panel title="Agent Access" subtitle="Local API and event stream for AI agents." tone="sky" icon={<Server size={16} />}>
+      <Panel title={t("settings.agent.title")} subtitle={t("settings.agent.subtitle")} tone="sky" icon={<Server size={16} />}>
         <div className="agent-experimental-message">
           <CircleAlert size={15} />
           <span>
-            This feature is in experimental/preview stage. Feel free to report bugs.
+            {t("settings.agent.experimental")}
           </span>
         </div>
 
         <div className="agent-access-status-row">
           <span className={`status-chip ${state?.running ? "status-ready" : "status-inactive"}`}>
-            {state?.running ? "running" : state?.enabled ? "stopped" : "disabled"}
+            {state?.running ? t("common.running") : state?.enabled ? t("common.stopped") : t("common.disabled")}
           </span>
           {state?.baseUrl ? <span className="settings-row-secondary settings-mono-cell">{state.baseUrl}</span> : null}
-          {state ? <span className="status-chip status-idle">{state.access === "local_network" ? "local network" : "localhost"}</span> : null}
-          {state ? <span className="status-chip status-idle">{state.connectedClients} clients</span> : null}
+          {state ? <span className="status-chip status-idle">{state.access === "local_network" ? t("settings.agent.localNetwork") : t("settings.agent.localhost")}</span> : null}
+          {state ? <span className="status-chip status-idle">{state.connectedClients} {t("settings.agent.clients")}</span> : null}
         </div>
 
         <div className="entry-grid two-col">
           <label className="field-block">
-            <span className="field-label">Access</span>
+            <span className="field-label">{t("settings.agent.access")}</span>
             <select
               className="config-input"
               value={accessDraft}
               onChange={(event) => setAccessDraft(event.target.value as BenchLocalAgentAccess)}
             >
-              <option value="localhost">Localhost only</option>
-              <option value="local_network">Local network</option>
+              <option value="localhost">{t("settings.agent.localhost")}</option>
+              <option value="local_network">{t("settings.agent.localNetwork")}</option>
             </select>
           </label>
-          <FieldToggle label="Local Agent API" checked={enabledDraft} onChange={setEnabledDraft} />
+          <FieldToggle label={t("settings.agent.localAgentApi")} checked={enabledDraft} onChange={setEnabledDraft} />
         </div>
 
         <div className="entry-grid two-col">
           <Field
-            label="Port"
+            label={t("settings.agent.port")}
             value={portDraft}
-            placeholder="Auto"
+            placeholder={t("settings.agent.portPlaceholder")}
             type="number"
             onChange={setPortDraft}
           />
         </div>
 
         <div className="agent-field-row agent-field-row-token">
-          <Field label="Bearer Token" value={state?.token ?? ""} readOnly onChange={() => undefined} />
+          <Field label={t("settings.agent.bearerToken")} value={state?.token ?? ""} readOnly onChange={() => undefined} />
           <button type="button" className="ghost-button ghost-button-compact" onClick={() => copyText(state?.token)} disabled={!state?.token}>
             <Copy size={14} />
-            Copy
+            {t("common.copy")}
           </button>
           <button type="button" className="ghost-button ghost-button-compact" onClick={onRegenerateToken}>
             <RotateCcw size={14} />
@@ -123,26 +125,26 @@ export function AgentAccessView({
         </div>
 
         <div className="agent-field-row">
-          <Field label="Agent Guide URL" value={agentGuideUrl} readOnly onChange={() => undefined} />
+          <Field label={t("settings.agent.guide")} value={agentGuideUrl} readOnly onChange={() => undefined} />
           <button type="button" className="ghost-button ghost-button-compact" onClick={() => copyText(agentGuideUrl)} disabled={!agentGuideUrl}>
             <Copy size={14} />
-            Copy
+            {t("common.copy")}
           </button>
         </div>
 
         <div className="agent-field-row">
-          <Field label="OpenAPI URL" value={openApiUrl} readOnly onChange={() => undefined} />
+          <Field label={t("settings.agent.openapi")} value={openApiUrl} readOnly onChange={() => undefined} />
           <button type="button" className="ghost-button ghost-button-compact" onClick={() => copyText(openApiUrl)} disabled={!openApiUrl}>
             <Copy size={14} />
-            Copy
+            {t("common.copy")}
           </button>
         </div>
 
         <div className="agent-field-row">
-          <Field label="MCP URL" value={mcpUrl} readOnly onChange={() => undefined} />
+          <Field label={t("settings.agent.mcpEndpoint")} value={mcpUrl} readOnly onChange={() => undefined} />
           <button type="button" className="ghost-button ghost-button-compact" onClick={() => copyText(mcpUrl)} disabled={!mcpUrl}>
             <Copy size={14} />
-            Copy
+            {t("common.copy")}
           </button>
         </div>
 
@@ -155,12 +157,12 @@ export function AgentAccessView({
         <div className="settings-actions">
           <button type="button" className="primary-button" onClick={apply}>
             <Save size={14} />
-            Save Setting
+            {t("common.save")}
           </button>
         </div>
       </Panel>
 
-      <Panel title="HTTP Surface" subtitle="Commands use JSON or MCP; live progress uses Server-Sent Events." tone="slate" icon={<Logs size={16} />}>
+      <Panel title={t("settings.agent.httpEndpoints")} subtitle="Commands use JSON or MCP; live progress uses Server-Sent Events." tone="slate" icon={<Logs size={16} />}>
         <div className="agent-endpoint-list">
           {httpEndpoints.map(([method, path]) => (
             <div key={`${method}-${path}`} className="agent-endpoint-row">

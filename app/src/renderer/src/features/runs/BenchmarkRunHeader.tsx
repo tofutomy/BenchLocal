@@ -31,6 +31,7 @@ function getVerifierStatusTone(status: BenchPackVerifierStatus["verifiers"][numb
 export function BenchmarkRunHeader({
   inspection,
   selectedModelCount,
+  operationModelCount,
   historyEntryCount,
   loadedHistory,
   runBlocker,
@@ -52,6 +53,7 @@ export function BenchmarkRunHeader({
 }: {
   inspection: BenchPackInspection;
   selectedModelCount: number;
+  operationModelCount: number;
   historyEntryCount: number;
   loadedHistory: LoadedBenchmarkHistoryEntry | null;
   runBlocker: BenchmarkRunBlocker | null;
@@ -90,7 +92,8 @@ export function BenchmarkRunHeader({
             <div className="workspace-toolbar-title">{inspection.manifest?.name ?? inspection.id}</div>
             <div className="workspace-stat-chips">
               <span className="status-chip status-preview">{inspection.scenarioCount ?? 0} scenarios</span>
-              <span className="status-chip status-idle">{selectedModelCount} models</span>
+              <span className="status-chip status-idle">{selectedModelCount} compared</span>
+              <span className="status-chip status-preview">{operationModelCount} selected to run</span>
               <span className={`status-chip ${runStateClass}`}>{runStateLabel}</span>
             </div>
           </div>

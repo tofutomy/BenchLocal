@@ -60,6 +60,7 @@ type AppSettingsSceneHostProps = {
   configureAgentAccess: (input: { enabled: boolean; access?: BenchLocalAgentAccess; port?: number }) => Promise<void>;
   regenerateAgentToken: () => Promise<void>;
   updateDraft: (updater: (current: BenchLocalConfig) => BenchLocalConfig) => void;
+  onLocaleChange: (locale: string) => void;
   saveVerifierConfig: (
     benchPackId: string,
     verifierId: string,
@@ -105,7 +106,8 @@ export function AppSettingsSceneHost({
   configureAgentAccess,
   regenerateAgentToken,
   updateDraft,
-  saveVerifierConfig
+  saveVerifierConfig,
+  onLocaleChange
 }: AppSettingsSceneHostProps) {
   return (
     <SettingsScene
@@ -233,6 +235,7 @@ export function AppSettingsSceneHost({
       onConfigureAgentAccess={(input) => void configureAgentAccess(input)}
       onRegenerateAgentToken={() => void regenerateAgentToken()}
       updateDraft={updateDraft}
+      onLocaleChange={onLocaleChange}
       onUpdateVerifier={(benchPackId, verifierId, updater) => {
         void saveVerifierConfig(benchPackId, verifierId, updater);
       }}

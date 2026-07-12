@@ -8,6 +8,7 @@ import {
   Panel,
   SettingsTableShell
 } from "../../shared/components/settings-primitives";
+import { useI18n } from "../../shared/i18n";
 
 function getModelDisplayIdentifier(model: Pick<BenchLocalModelConfig, "id" | "model">): string {
   return model.model.trim() || model.id.split(":").slice(1).join(":").trim() || model.id;
@@ -26,28 +27,29 @@ export function ProvidersView({
   onEdit: (providerId: string) => void;
   onDuplicate: (providerId: string) => void;
 }) {
+  const { t } = useI18n();
   const providerIds = Object.keys(providers);
 
   return (
     <Panel
-      title="Provider Registry"
-      subtitle="Provider endpoints, credentials, and activation state shared across all Bench Packs."
+      title={t("settings.providers.title")}
+      subtitle={t("settings.providers.subtitle")}
       tone="sky"
       icon={<Server size={16} />}
       actions={
-        <button type="button" onClick={onCreate} className="primary-button"><Plus size={14} />Add Provider</button>
+        <button type="button" onClick={onCreate} className="primary-button"><Plus size={14} />{t("settings.providers.addProvider")}</button>
       }
     >
       <SettingsTableShell>
         <table className="settings-list-table">
           <thead>
             <tr>
-              <th>Provider</th>
-              <th>Type</th>
-              <th>Status</th>
-              <th>Base URL</th>
-              <th>Models</th>
-              <th>Actions</th>
+              <th>{t("settings.providers.col.provider")}</th>
+              <th>{t("settings.providers.col.type")}</th>
+              <th>{t("settings.providers.col.status")}</th>
+              <th>{t("settings.providers.col.baseUrl")}</th>
+              <th>{t("settings.providers.col.models")}</th>
+              <th>{t("settings.providers.col.actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -65,15 +67,15 @@ export function ProvidersView({
                   </td>
                   <td>
                     <span className={`status-chip ${provider.enabled ? "status-ready" : "status-inactive"}`}>
-                      {provider.enabled ? "active" : "inactive"}
+                      {provider.enabled ? t("common.active") : t("common.inactive")}
                     </span>
                   </td>
                   <td className="settings-mono-cell">{provider.base_url}</td>
                   <td>{linkedModels}</td>
                   <td>
                     <div className="settings-table-actions">
-                      <button type="button" onClick={() => onEdit(providerId)} className="ghost-button ghost-button-compact"><Pencil size={14} />Edit</button>
-                      <button type="button" onClick={() => onDuplicate(providerId)} className="ghost-button ghost-button-compact"><Copy size={14} />Duplicate</button>
+                      <button type="button" onClick={() => onEdit(providerId)} className="ghost-button ghost-button-compact"><Pencil size={14} />{t("common.edit")}</button>
+                      <button type="button" onClick={() => onDuplicate(providerId)} className="ghost-button ghost-button-compact"><Copy size={14} />{t("settings.providers.duplicate")}</button>
                     </div>
                   </td>
                 </tr>
@@ -101,11 +103,12 @@ export function ModelsView({
   onEdit: (index: number) => void;
   onDuplicate: (index: number) => void;
 }) {
+  const { t } = useI18n();
   const [providerFilter, setProviderFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const providerOptions = [
-    { value: "all", label: "All Providers" },
+    { value: "all", label: t("settings.models.allProviders") },
     ...Array.from(new Set(models.map((model) => model.provider)))
       .sort((left, right) => getProviderDisplayName(providers, left).localeCompare(getProviderDisplayName(providers, right)))
       .map((providerId) => ({
@@ -114,7 +117,7 @@ export function ModelsView({
       }))
   ];
   const groupOptions = [
-    { value: "all", label: "All Groups" },
+    { value: "all", label: t("settings.models.allGroups") },
     ...Array.from(new Set(models.map((model) => model.group.trim() || "__ungrouped__")))
       .sort((left, right) => left.localeCompare(right))
       .map((group) => ({
@@ -154,8 +157,8 @@ export function ModelsView({
 
   return (
     <Panel
-      title="Shared Model Registry"
-      subtitle="Model labels, provider mapping, and activation state available across all Bench Packs."
+      title={t("settings.models.title")}
+      subtitle={t("settings.models.subtitle")}
       tone="orange"
       icon={<Bot size={16} />}
       actions={
@@ -166,25 +169,25 @@ export function ModelsView({
           className="primary-button"
         >
           <Plus size={14} />
-          Add Model
+          {t("settings.models.addModel")}
         </button>
       }
     >
       <div className="settings-models-filter-row">
         <InlineSelectField
-          label="Provider Filter"
+          label={t("settings.providers.col.provider")}
           value={providerFilter}
           options={providerOptions}
           onChange={setProviderFilter}
         />
         <InlineSelectField
-          label="Group Filter"
+          label={t("settings.models.col.group")}
           value={groupFilter}
           options={groupOptions}
           onChange={setGroupFilter}
         />
         <Field
-          label="Search"
+          label={t("settings.models.col.model")}
           value={searchQuery}
           onChange={setSearchQuery}
           placeholder="Search label, model, ID, provider, or group"
@@ -194,12 +197,12 @@ export function ModelsView({
         <table className="settings-list-table">
           <thead>
             <tr>
-              <th>Label</th>
-              <th>Status</th>
-              <th>Provider</th>
-              <th>Model</th>
-              <th>Group</th>
-              <th>Actions</th>
+              <th>{t("settings.models.col.model")}</th>
+              <th>{t("settings.models.col.status")}</th>
+              <th>{t("settings.models.col.provider")}</th>
+              <th>{t("settings.models.col.model")}</th>
+              <th>{t("settings.models.col.group")}</th>
+              <th>{t("settings.models.col.actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -218,7 +221,7 @@ export function ModelsView({
                   </td>
                   <td>
                     <span className={`status-chip ${model.enabled ? "status-ready" : "status-inactive"}`}>
-                      {model.enabled ? "active" : "inactive"}
+                      {model.enabled ? t("common.active") : t("common.inactive")}
                     </span>
                   </td>
                   <td>{getProviderDisplayName(providers, model.provider)}</td>
@@ -226,8 +229,8 @@ export function ModelsView({
                   <td>{model.group}</td>
                   <td>
                     <div className="settings-table-actions">
-                      <button type="button" onClick={() => onEdit(index)} className="ghost-button ghost-button-compact"><Pencil size={14} />Edit</button>
-                      <button type="button" onClick={() => onDuplicate(index)} className="ghost-button ghost-button-compact"><Copy size={14} />Duplicate</button>
+                      <button type="button" onClick={() => onEdit(index)} className="ghost-button ghost-button-compact"><Pencil size={14} />{t("common.edit")}</button>
+                      <button type="button" onClick={() => onDuplicate(index)} className="ghost-button ghost-button-compact"><Copy size={14} />{t("settings.providers.duplicate")}</button>
                     </div>
                   </td>
                 </tr>
