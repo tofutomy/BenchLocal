@@ -29,6 +29,7 @@
 .radar-grid, .radar-axis { fill: none; stroke: var(--border); stroke-width: 1; }
 .radar-axis { opacity: .8; }
 .radar-label { fill: var(--text); font-size: 12px; dominant-baseline: middle; }
+.radar-scale-label { font-size: 10px; fill: var(--muted); pointer-events: none; }
 .radar-series { fill: currentColor; fill-opacity: .1; stroke: currentColor; stroke-width: 2; }
 .radar-point { fill: currentColor; stroke: var(--surface); stroke-width: 1.5; }
 .overview-radar-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
