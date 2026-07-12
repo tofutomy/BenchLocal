@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run core tests",
+			"type": "shell",
+			"command": "cd g:\\Project\\AiBench\\BenchLocal && npx vitest run packages/benchlocal-core/test/ --reporter=verbose 2>&1",
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Run core tests",
+			"type": "shell",
+			"command": "cd g:\\Project\\AiBench\\BenchLocal && npx vitest run packages/benchlocal-core/test/ --reporter=verbose 2>&1",
+			"problemMatcher": [],
+			"group": "test"
+		}
+	]
+}
