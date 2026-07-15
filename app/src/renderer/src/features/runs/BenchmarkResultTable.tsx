@@ -103,6 +103,12 @@ export function BenchmarkResultTable({
   onFocusScenario,
   onRefreshModelAvailability,
   onRetryCells,
+  isRunning,
+  isStopping,
+  isRunButtonDisabled,
+  runButtonLabel,
+  onRun,
+  onStop,
   onOpenDetail
 }: {
   tabId: string;
@@ -141,6 +147,12 @@ export function BenchmarkResultTable({
   onFocusScenario: (scenarioId: string) => void;
   onRefreshModelAvailability: () => void;
   onRetryCells: (cells: RetryScenarioCell[], label: string) => void;
+  isRunning: boolean;
+  isStopping: boolean;
+  isRunButtonDisabled: boolean;
+  runButtonLabel: string;
+  onRun: () => void;
+  onStop: () => void;
   onOpenDetail: (detail: DetailModalState) => void;
 }) {
   const operationModelIdSet = new Set(operationModelIds);
@@ -417,8 +429,14 @@ export function BenchmarkResultTable({
             canRetryResultCells={canRetryResultCells}
             providerErrorRetryCells={providerErrorRetryCells}
             failedRetryCells={failedRetryCells}
+            isRunning={isRunning}
+            isStopping={isStopping}
+            isRunButtonDisabled={isRunButtonDisabled}
+            runButtonLabel={runButtonLabel}
             onRefreshModelAvailability={onRefreshModelAvailability}
             onRetryCells={onRetryCells}
+            onRun={onRun}
+            onStop={onStop}
           />
         </>
       )}

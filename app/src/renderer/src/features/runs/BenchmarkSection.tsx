@@ -494,6 +494,12 @@ export function BenchmarkSection({
             onFocusScenario={onFocusScenario}
             onRefreshModelAvailability={onRefreshModelAvailability}
             onRetryCells={onRetryCells}
+            isRunning={isRunning}
+            isStopping={isStopping}
+            isRunButtonDisabled={isRunButtonDisabled}
+            runButtonLabel={runButtonLabel}
+            onRun={() => onRun(operationModelIds)}
+            onStop={onStop}
             onOpenDetail={onOpenDetail}
           />
           {displayRunSummary && !hasLiveActivity && (!isReplayMode || hasCompletedReplay) ? (

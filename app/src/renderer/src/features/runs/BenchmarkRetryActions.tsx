@@ -1,4 +1,4 @@
-import { CircleAlert, RotateCcw } from "lucide-react";
+import { CircleAlert, Play, RotateCcw, Square } from "lucide-react";
 
 type RetryScenarioCell = {
   modelId: string;
@@ -13,8 +13,14 @@ export function BenchmarkRetryActions({
   canRetryResultCells,
   providerErrorRetryCells,
   failedRetryCells,
+  isRunning,
+  isStopping,
+  isRunButtonDisabled,
+  runButtonLabel,
   onRefreshModelAvailability,
-  onRetryCells
+  onRetryCells,
+  onRun,
+  onStop
 }: {
   hasLiveActivity: boolean;
   selectedModelCount: number;
@@ -23,8 +29,14 @@ export function BenchmarkRetryActions({
   canRetryResultCells: boolean;
   providerErrorRetryCells: RetryScenarioCell[];
   failedRetryCells: RetryScenarioCell[];
+  isRunning: boolean;
+  isStopping: boolean;
+  isRunButtonDisabled: boolean;
+  runButtonLabel: string;
   onRefreshModelAvailability: () => void;
   onRetryCells: (cells: RetryScenarioCell[], label: string) => void;
+  onRun: () => void;
+  onStop: () => void;
 }) {
   return (
     <div className="table-retry-actions">
@@ -62,6 +74,16 @@ export function BenchmarkRetryActions({
             </button>
           </>
         ) : null}
+        {/* 模型列表下方也放 Run，长列表时不必滚回顶部 */}
+        <button
+          type="button"
+          onClick={isRunning ? onStop : onRun}
+          disabled={isRunButtonDisabled}
+          className={isRunning ? "button-warn" : "primary-button"}
+        >
+          {isRunning ? <Square size={15} /> : <Play size={15} />}
+          {isStopping ? "Stopping..." : runButtonLabel}
+        </button>
       </div>
     </div>
   );
