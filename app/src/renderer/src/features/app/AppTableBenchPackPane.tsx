@@ -59,7 +59,6 @@ export function AppTableBenchPackPane({
   loadVerifierStatuses,
   loadHistoryForBenchPack,
   refreshModelAvailability,
-  clearLoadedHistoryRun,
   resetTabRunState,
   replayTabRun,
   resumeTabRun,
@@ -94,7 +93,6 @@ export function AppTableBenchPackPane({
   loadVerifierStatuses: () => Promise<void>;
   loadHistoryForBenchPack: (benchPackId: string) => Promise<void>;
   refreshModelAvailability: (models: ResolvedTabModel[]) => Promise<void>;
-  clearLoadedHistoryRun: (tabId: string) => void;
   resetTabRunState: (tab: BenchLocalWorkspaceTab) => void;
   replayTabRun: (tab: BenchLocalWorkspaceTab, runSummary: BenchPackRunSummary) => Promise<void>;
   resumeTabRun: (tab: BenchLocalWorkspaceTab, runSummary: BenchPackRunSummary) => Promise<void>;
@@ -239,7 +237,6 @@ export function AppTableBenchPackPane({
         }}
         onRefreshVerification={() => void loadVerifierStatuses()}
         onRefreshModelAvailability={() => void refreshModelAvailability(activeDisplayModels)}
-        onClearHistory={() => clearLoadedHistoryRun(activeTab.id)}
         onStartOver={() => resetTabRunState(activeTab)}
         onRun={(operationModelIds) =>
           void (

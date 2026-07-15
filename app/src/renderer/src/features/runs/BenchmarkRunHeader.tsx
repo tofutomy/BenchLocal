@@ -8,12 +8,6 @@ type BenchmarkRunBlocker = {
   actionLabel: string;
 };
 
-type LoadedBenchmarkHistoryEntry = {
-  runId: string;
-  startedAt: string;
-  mode?: "history" | "replay";
-};
-
 function getVerifierStatusTone(status: BenchPackVerifierStatus["verifiers"][number]["status"] | undefined): string {
   switch (status) {
     case "running":
@@ -33,7 +27,6 @@ export function BenchmarkRunHeader({
   selectedModelCount,
   operationModelCount,
   historyEntryCount,
-  loadedHistory,
   runBlocker,
   verifierStatus,
   runStateClass,
@@ -44,7 +37,6 @@ export function BenchmarkRunHeader({
   isRunButtonDisabled,
   runButtonLabel,
   onOpenHistory,
-  onClearHistory,
   onStartOver,
   onRun,
   onStop,
@@ -55,7 +47,6 @@ export function BenchmarkRunHeader({
   selectedModelCount: number;
   operationModelCount: number;
   historyEntryCount: number;
-  loadedHistory: LoadedBenchmarkHistoryEntry | null;
   runBlocker: BenchmarkRunBlocker | null;
   verifierStatus: BenchPackVerifierStatus | null;
   runStateClass: string;
@@ -66,7 +57,6 @@ export function BenchmarkRunHeader({
   isRunButtonDisabled: boolean;
   runButtonLabel: string;
   onOpenHistory: () => void;
-  onClearHistory: () => void;
   onStartOver: () => void;
   onRun: () => void;
   onStop: () => void;
@@ -75,16 +65,6 @@ export function BenchmarkRunHeader({
 }) {
   return (
     <>
-      {loadedHistory && loadedHistory.mode !== "replay" ? (
-        <div className="history-banner">
-          <div className="banner-row">
-            <span>Loaded test history from {new Date(loadedHistory.startedAt).toLocaleString()}.</span>
-            <button type="button" className="history-banner-close" onClick={onClearHistory}>
-              Close
-            </button>
-          </div>
-        </div>
-      ) : null}
       <div className="workspace-toolbar">
         <div className="workspace-toolbar-copy">
           <p className="eyebrow">Bench Pack Session</p>

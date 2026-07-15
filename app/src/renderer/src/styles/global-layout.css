@@ -109,28 +109,6 @@
 .event-payload {
   color: var(--log-drawer-muted);
 }
-.history-banner {
-  margin: 0 0 14px;
-  border-radius: 16px;
-  padding: 10px 18px;
-  background: var(--history-banner-bg);
-  border: 1px solid var(--history-banner-border);
-  color: var(--history-banner-ink);
-}
-.history-banner-close {
-  border: 1px solid var(--history-banner-close-border);
-  border-radius: 999px;
-  background: var(--history-banner-close-bg);
-  color: var(--history-banner-close-ink);
-  min-height: 32px;
-  padding: 0 16px;
-  font-size: 0.95rem;
-  font-weight: 650;
-  cursor: pointer;
-}
-.history-banner-close:hover {
-  filter: brightness(1.04);
-}
 .dropdown-shell {
   position: relative;
 }

@@ -14,6 +14,7 @@ type UseBenchPackHistoryActionsOptions = {
   setRunSummaries: Dispatch<SetStateAction<Record<string, BenchPackRunSummary>>>;
   setLiveRuns: Dispatch<SetStateAction<Record<string, LiveRunState>>>;
   setLoadedHistoryRuns: Dispatch<SetStateAction<Record<string, LoadedHistoryEntry>>>;
+  setAppNotice: Dispatch<SetStateAction<string | null>>;
   setError: Dispatch<SetStateAction<string | null>>;
 };
 
@@ -25,6 +26,7 @@ export function useBenchPackHistoryActions({
   setRunSummaries,
   setLiveRuns,
   setLoadedHistoryRuns,
+  setAppNotice,
   setError
 }: UseBenchPackHistoryActionsOptions) {
   const loadHistoryForBenchPack = async (benchPackId: string) => {
@@ -56,6 +58,10 @@ export function useBenchPackHistoryActions({
         ...current,
         [tabId]: { runId, startedAt: summary.startedAt, mode }
       }));
+      // 用浮动 toast 提示，避免旧版 history banner 挡住 Run。
+      if (mode !== "replay") {
+        setAppNotice(`Loaded test history from ${new Date(summary.startedAt).toLocaleString()}.`);
+      }
     } catch (error) {
       setError(error instanceof Error ? error.message : "Failed to load Bench Pack history.");
     }

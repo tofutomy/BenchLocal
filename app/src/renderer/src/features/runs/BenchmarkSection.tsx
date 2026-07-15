@@ -64,7 +64,6 @@ export function BenchmarkSection({
   onOpenVerification,
   onRefreshVerification,
   onRefreshModelAvailability,
-  onClearHistory,
   onStartOver,
   onRun,
   onStop,
@@ -101,7 +100,6 @@ export function BenchmarkSection({
   onOpenVerification: () => void;
   onRefreshVerification: () => void;
   onRefreshModelAvailability: () => void;
-  onClearHistory: () => void;
   onStartOver: () => void;
   onRun: (modelIds: string[]) => void;
   onStop: () => void;
@@ -201,9 +199,10 @@ export function BenchmarkSection({
     replayRevealedCellCount >= replayTotalCellCount;
   const canStartFreshRun = inspection.status === "ready" && operationModelCount > 0;
   const canResumeRun = Boolean(runSummary) && isResumableRun;
+  // 查看历史时仍允许直接开跑；开跑会清掉 loaded history，不再用 banner 挡住 Run。
   const isRunButtonDisabled = isRunning
     ? false
-    : hasRetryActivity || isStopping || !(canReplayRun || canResumeRun || (!isViewingHistory && canStartFreshRun));
+    : hasRetryActivity || isStopping || !(canReplayRun || canResumeRun || canStartFreshRun);
   const hasHorizontalOverflow = tableScrollMetrics.scrollWidth > tableScrollMetrics.clientWidth + 1;
   const stickyColumnShadow = tableScrollMetrics.scrollLeft > 2;
   const scrollbarThumbWidth = hasHorizontalOverflow ? getTableScrollbarThumbWidth(tableScrollMetrics) : 0;
@@ -404,7 +403,6 @@ export function BenchmarkSection({
         selectedModelCount={selectedModels.length}
         operationModelCount={operationModelCount}
         historyEntryCount={historyEntries.length}
-        loadedHistory={loadedHistory}
         runBlocker={runBlocker}
         verifierStatus={verifierStatus}
         runStateClass={runStateClass}
@@ -415,7 +413,6 @@ export function BenchmarkSection({
         isRunButtonDisabled={isRunButtonDisabled}
         runButtonLabel={runButtonLabel}
         onOpenHistory={onOpenHistory}
-        onClearHistory={onClearHistory}
         onStartOver={onStartOver}
         onRun={() => onRun(operationModelIds)}
         onStop={onStop}

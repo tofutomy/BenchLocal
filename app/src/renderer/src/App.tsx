@@ -386,6 +386,7 @@ export function App() {
     setRunSummaries,
     setLiveRuns,
     setLoadedHistoryRuns,
+    setAppNotice,
     setError
   });
   const {
@@ -1017,7 +1018,6 @@ export function App() {
                             loadVerifierStatuses={loadVerifierStatuses}
                             loadHistoryForBenchPack={loadHistoryForBenchPack}
                             refreshModelAvailability={refreshModelAvailability}
-                            clearLoadedHistoryRun={clearLoadedHistoryRun}
                             resetTabRunState={resetTabRunState}
                             replayTabRun={replayTabRun}
                             resumeTabRun={resumeTabRun}

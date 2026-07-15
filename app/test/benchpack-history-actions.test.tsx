@@ -22,6 +22,7 @@ it("restores a history run into the active tab and clears live state", async () 
   const workspace = {
     tabs: { "tab-1": { id: "tab-1", executionMode: "full_parallel" } }
   } as unknown as BenchLocalWorkspaceState;
+  const setAppNotice = vi.fn();
 
   const { result } = renderHook(() => {
     const [summaries, setSummaries] = useState<Record<string, BenchPackRunSummary>>({});
@@ -34,6 +35,7 @@ it("restores a history run into the active tab and clears live state", async () 
       setRunSummaries: setSummaries,
       setLiveRuns: setLive,
       setLoadedHistoryRuns: setLoaded,
+      setAppNotice,
       setError: () => undefined
     });
     return { summaries, live, loaded, actions };
@@ -45,4 +47,41 @@ it("restores a history run into the active tab and clears live state", async () 
   expect(result.current.live).toEqual({});
   expect(result.current.loaded["tab-1"]).toMatchObject({ runId: "run-1", mode: "replay" });
   expect(workspace.tabs["tab-1"]?.executionMode).toBe("serial");
+  expect(setAppNotice).not.toHaveBeenCalled();
+});
+
+it("shows a floating notice when restoring a non-replay history run", async () => {
+  const summary = {
+    runId: "run-2",
+    startedAt: "2026-07-10T12:00:00.000Z",
+    executionMode: "serial"
+  } as BenchPackRunSummary;
+  Object.defineProperty(window, "benchlocal", {
+    configurable: true,
+    value: { benchPacks: { loadHistory: vi.fn().mockResolvedValue(summary) } }
+  });
+  const workspace = {
+    tabs: { "tab-1": { id: "tab-1", executionMode: "full_parallel" } }
+  } as unknown as BenchLocalWorkspaceState;
+  const setAppNotice = vi.fn();
+
+  const { result } = renderHook(() => {
+    const actions = useBenchPackHistoryActions({
+      activeTab: { id: "tab-1" } as BenchLocalWorkspaceTab,
+      updateWorkspaceState: (updater) => updater(workspace),
+      setRunHistories: () => undefined,
+      setRunSummaries: () => undefined,
+      setLiveRuns: () => undefined,
+      setLoadedHistoryRuns: () => undefined,
+      setAppNotice,
+      setError: () => undefined
+    });
+    return { actions };
+  });
+
+  await act(async () => result.current.actions.restoreHistoryRun("pack-1", "run-2", "history"));
+
+  expect(setAppNotice).toHaveBeenCalledWith(
+    `Loaded test history from ${new Date(summary.startedAt).toLocaleString()}.`
+  );
 });
