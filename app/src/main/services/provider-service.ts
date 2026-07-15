@@ -70,7 +70,13 @@ function patchProviderConfig(
 }
 
 function providerSupportsModelDiscovery(provider: BenchLocalProviderConfig): boolean {
-  return provider.kind === "openrouter" || provider.kind === "huggingface" || provider.kind === "openai_compatible";
+  // LM Studio 提供 OpenAI 兼容的 /v1/models，与远程兼容源共用同一发现路径
+  return (
+    provider.kind === "openrouter" ||
+    provider.kind === "huggingface" ||
+    provider.kind === "openai_compatible" ||
+    provider.kind === "lmstudio"
+  );
 }
 
 function providerModelsUrl(baseUrl: string): string {

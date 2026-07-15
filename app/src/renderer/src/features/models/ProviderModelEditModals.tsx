@@ -171,7 +171,7 @@ export function ModelEditModal({
               title={
                 canBrowseModels
                   ? "Browse models"
-                  : "Model browsing is currently available only for OpenRouter and OpenAI-compatible providers."
+                  : "Model browsing is currently available only for OpenRouter, Hugging Face, OpenAI-compatible, and LM Studio providers."
               }
             >
               <LayoutList size={14} />

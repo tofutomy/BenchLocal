@@ -135,7 +135,13 @@ export function createEmptyModel(providerId = "openrouter"): ModelFormState {
 }
 
 export function providerSupportsModelDiscovery(provider?: BenchLocalProviderConfig | null): boolean {
-  return provider?.kind === "openrouter" || provider?.kind === "huggingface" || provider?.kind === "openai_compatible";
+  // 与主进程白名单保持一致：LM Studio 走本地 OpenAI 兼容 /models
+  return (
+    provider?.kind === "openrouter" ||
+    provider?.kind === "huggingface" ||
+    provider?.kind === "openai_compatible" ||
+    provider?.kind === "lmstudio"
+  );
 }
 
 export function defaultModelLabel(
